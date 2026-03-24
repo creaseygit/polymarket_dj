@@ -11,23 +11,6 @@ set :ambient_mode, 0
 
 set_volume! 0.8
 prev_price = 0.5
-motif_idx = 0
-
-rise_motifs = [
-  [0, 2, 4],
-  [0, 2, 4, 7],
-  [0, 4, 7, 11],
-  [4, 2, 4, 7],
-  [0, 4, 2, 4, 7]
-]
-
-fall_motifs = [
-  [7, 4, 2],
-  [7, 4, 2, 0],
-  [11, 7, 4, 0],
-  [4, 7, 4, 2],
-  [7, 4, 7, 2, 0]
-]
 
 live_loop :price_watch do
   p = get(:price)
@@ -38,20 +21,19 @@ live_loop :price_watch do
   if mag > 0.02
     root = t == 1 ? :c4 : :a3
     sc = t == 1 ? :major : :minor
-    all_notes = scale(root, sc, num_octaves: 2)
-    octave_shift = ((p - 0.5) * 6).to_i
+    num = mag > 0.04 ? 4 : 2 + (mag * 50).to_i
+    num = [[num, 2].max, 5].min
+    ns = scale(root, sc, num_octaves: 2)
     if delta > 0
-      motif = mag > 0.04 ? rise_motifs[motif_idx % 5] : rise_motifs[motif_idx % 3]
+      notes = ns.take(num)
     else
-      motif = mag > 0.04 ? fall_motifs[motif_idx % 5] : fall_motifs[motif_idx % 3]
+      notes = ns.take(num).reverse
     end
-    motif_idx = motif_idx + 1
-    vol = [[0.08 + (mag * 1.2), 0.08].max, 0.18].min
+    vol = [[0.08 + (mag * 1.5), 0.08].max, 0.18].min
     hard = [[0.25 + (mag * 2), 0.25].max, 0.55].min
     with_fx :reverb, room: 0.6, damp: 0.5 do
-      motif.each_with_index do |deg, i|
-        frac = i.to_f / [motif.length - 1, 1].max
-        n = all_notes[deg + octave_shift] || all_notes[deg]
+      notes.each_with_index do |n, i|
+        frac = i.to_f / [notes.length - 1, 1].max
         amp_env = delta > 0 ? vol * (0.7 + frac * 0.3) : vol * (1.0 - frac * 0.3)
         synth :piano, note: n, amp: amp_env, hard: hard,
           vel: 0.5 + (mag * 2), pan: (frac - 0.5) * 0.3
@@ -69,18 +51,16 @@ live_loop :price_event do
     set :event_price_move, 0
     root = t == 1 ? :c4 : :a3
     sc = t == 1 ? :major : :minor
-    all_notes = scale(root, sc, num_octaves: 2)
+    ns = scale(root, sc, num_octaves: 2)
     if pm == 1
-      motif = [0, 4, 7, 4, 7, 11]
+      notes = ns.take(7)
     else
-      motif = [11, 7, 4, 7, 4, 0]
+      notes = ns.take(7).reverse
     end
-    vol = 0.16
     with_fx :reverb, room: 0.7, damp: 0.4 do
-      motif.each_with_index do |deg, i|
-        frac = i.to_f / (motif.length - 1)
-        n = all_notes[deg] || all_notes[0]
-        amp_env = pm == 1 ? vol * (0.6 + frac * 0.4) : vol * (1.0 - frac * 0.3)
+      notes.each_with_index do |n, i|
+        frac = i.to_f / (notes.length - 1)
+        amp_env = pm == 1 ? 0.16 * (0.6 + frac * 0.4) : 0.16 * (1.0 - frac * 0.3)
         synth :piano, note: n, amp: amp_env,
           hard: 0.4, vel: 0.6, pan: (frac - 0.5) * 0.4
         sleep 0.3
@@ -95,27 +75,25 @@ live_loop :resolved do
   if mr != 0
     set :market_resolved, 0
     if mr == 1
-      all_notes = scale(:c4, :major, num_octaves: 2)
-      motif = [0, 2, 4, 7, 4, 7, 11]
+      notes = scale(:c4, :major, num_octaves: 1)
       with_fx :reverb, room: 0.9, damp: 0.3 do
-        motif.each_with_index do |deg, i|
-          frac = i.to_f / (motif.length - 1)
-          synth :piano, note: all_notes[deg], amp: 0.18 * (0.5 + frac * 0.5),
+        notes.each_with_index do |n, i|
+          frac = i.to_f / (notes.length - 1)
+          synth :piano, note: n, amp: 0.18 * (0.5 + frac * 0.5),
             hard: 0.3 + (frac * 0.3), vel: 0.5 + (frac * 0.3),
             pan: (frac - 0.5) * 0.4
-          sleep 0.35
+          sleep 0.3
         end
       end
     else
-      all_notes = scale(:a3, :minor, num_octaves: 2)
-      motif = [11, 7, 4, 7, 4, 2, 0]
+      notes = scale(:a4, :minor, num_octaves: 1).reverse
       with_fx :reverb, room: 0.9, damp: 0.6 do
-        motif.each_with_index do |deg, i|
-          frac = i.to_f / (motif.length - 1)
-          synth :piano, note: all_notes[deg], amp: 0.15 * (1.0 - frac * 0.3),
+        notes.each_with_index do |n, i|
+          frac = i.to_f / (notes.length - 1)
+          synth :piano, note: n, amp: 0.15 * (1.0 - frac * 0.3),
             hard: 0.4 - (frac * 0.1), vel: 0.6 - (frac * 0.2),
             pan: (0.5 - frac) * 0.4
-          sleep 0.35
+          sleep 0.3
         end
       end
     end
