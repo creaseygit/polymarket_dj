@@ -63,7 +63,16 @@ class PolymarketFeed:
                     "assets_ids": add
                 }))
 
-    def _dispatch(self, msg: dict):
+    def _dispatch(self, msg):
+        # First message after subscribe is a list (initial book snapshot)
+        if isinstance(msg, list):
+            for item in msg:
+                if isinstance(item, dict):
+                    self._dispatch_single(item)
+            return
+        self._dispatch_single(msg)
+
+    def _dispatch_single(self, msg: dict):
         etype = msg.get("event_type")
 
         if etype == "price_change":
@@ -72,16 +81,26 @@ class PolymarketFeed:
                     change["asset_id"], float(change["price"])
                 )
                 self.scorer.on_trade(change["asset_id"])
+                # price_changes also contain best bid/ask info
+                if "best_bid" in change and "best_ask" in change:
+                    self.scorer.on_best_bid_ask(
+                        change["asset_id"],
+                        float(change["best_bid"]),
+                        float(change["best_ask"])
+                    )
 
         elif etype == "last_trade_price":
-            self.scorer.on_trade(msg["asset_id"])
+            self.scorer.on_trade(msg.get("asset_id", ""))
 
-        elif etype == "best_bid_ask":
-            self.scorer.on_best_bid_ask(
-                msg["asset_id"],
-                float(msg["best_bid"]),
-                float(msg["best_ask"])
-            )
+        elif etype in ("book", "tick_size_change"):
+            # Book snapshots — extract best bid/ask from bids/asks arrays
+            asset_id = msg.get("asset_id", "")
+            bids = msg.get("bids", [])
+            asks = msg.get("asks", [])
+            if asset_id and bids and asks:
+                best_bid = max(float(b["price"]) for b in bids)
+                best_ask = min(float(a["price"]) for a in asks)
+                self.scorer.on_best_bid_ask(asset_id, best_bid, best_ask)
 
         elif etype == "market_resolved":
             if self.on_resolution:
