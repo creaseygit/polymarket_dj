@@ -13,11 +13,30 @@ Usage:
     await launcher.shutdown()
 """
 import asyncio
+import atexit
 import subprocess
 import sys
 import os
 from pathlib import Path
 from pythonosc import udp_client
+
+# Track all spawned processes so we can clean up on crash/exit
+_spawned_processes = []
+
+def _cleanup_on_exit():
+    """Kill any Sonic Pi processes we spawned, even on unclean exit."""
+    for proc in _spawned_processes:
+        try:
+            proc.terminate()
+            proc.wait(timeout=3)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+    _spawned_processes.clear()
+
+atexit.register(_cleanup_on_exit)
 from pythonosc.osc_message_builder import OscMessageBuilder
 
 
@@ -78,6 +97,7 @@ class SonicPiHeadless:
             env=env,
             cwd=str(self.sonic_pi_dir / "app" / "server" / "ruby"),
         )
+        _spawned_processes.append(self._process)
 
         # Read port allocations from stdout
         # Format: daemon gui-listen gui-send scsynth osc-cues tau-api tau-phx token

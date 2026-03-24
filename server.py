@@ -274,6 +274,37 @@ async def handle_unpin(request):
     return web.json_response({"error": "DJ not running"}, status=400)
 
 
+async def handle_kill_all(request):
+    """Emergency kill: stop audio and kill all orphaned scsynth/ruby processes."""
+    import subprocess as sp
+
+    # Stop our own audio first
+    if state._push_task:
+        state._push_task.cancel()
+        state._push_task = None
+    if state.sonic:
+        await state.sonic.shutdown()
+        state.sonic = None
+    state.audio_running = False
+    state.current_track = None
+
+    # Kill any orphaned processes
+    killed = []
+    for proc_name in ["scsynth.exe", "ruby.exe"]:
+        try:
+            result = sp.run(["taskkill", "/F", "/IM", proc_name],
+                          capture_output=True, text=True)
+            if "SUCCESS" in result.stdout:
+                count = result.stdout.count("SUCCESS")
+                killed.append(f"{proc_name}: {count}")
+        except Exception:
+            pass
+
+    msg = f"Killed: {', '.join(killed)}" if killed else "No orphaned processes found"
+    print(f"[SERVER] Kill all: {msg}", flush=True)
+    return web.json_response({"ok": True, "message": msg})
+
+
 async def handle_index(request):
     return web.Response(text=HTML_PAGE, content_type="text/html")
 
@@ -341,6 +372,7 @@ HTML_PAGE = """<!DOCTYPE html>
       <button id="btn-start" onclick="startAudio()">Start</button>
       <button id="btn-stop" class="danger" onclick="stopAudio()">Stop</button>
       <button onclick="changeTrack()">Switch Track</button>
+      <button class="danger" onclick="killAll()">Kill All Processes</button>
     </div>
   </div>
 
@@ -421,6 +453,13 @@ async function pinMarket(slug) {
   log('Pinning: ' + slug);
   const r = await api('/api/pin', 'POST', {slug});
   if (r.ok) log('Pinned: ' + slug);
+  else log('ERROR: ' + r.error);
+}
+
+async function killAll() {
+  log('Killing all audio processes...');
+  const r = await api('/api/kill-all', 'POST');
+  if (r.ok) log(r.message);
   else log('ERROR: ' + r.error);
 }
 
@@ -554,6 +593,7 @@ def create_app():
     app.router.add_post("/api/track", handle_change_track)
     app.router.add_post("/api/pin", handle_pin_market)
     app.router.add_post("/api/unpin", handle_unpin)
+    app.router.add_post("/api/kill-all", handle_kill_all)
 
     return app
 
