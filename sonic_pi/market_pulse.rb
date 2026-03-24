@@ -13,6 +13,7 @@
 
 use_bpm 120
 use_debug false
+set_volume! 0.7  # master headroom
 
 # ─── Defaults (silent until Python sends data) ───────────
 [:kick, :bass, :pad, :lead, :atmos].each do |layer|
@@ -149,15 +150,17 @@ live_loop :pad_loop do
     c = chords.tick(:pad_chord)
 
     with_fx :reverb, room: [reverb, 0.9].min, mix: 0.6, damp: 0.5 do
-      with_fx :lpf, cutoff: cutoff + 15 do
-        # Play chord spread across time for shimmer
-        c.each_with_index do |n, i|
-          play n,
-            amp: amp * 0.18,
-            attack: 1.0 + (i * 0.3),
-            sustain: 4,
-            release: 2,
-            pan: (i - 1.5) * 0.3  # spread stereo
+      with_fx :hpf, cutoff: 55 do  # clear low-end for bass
+        with_fx :lpf, cutoff: cutoff + 15 do
+          # Play chord spread across time for shimmer
+          c.each_with_index do |n, i|
+            play n,
+              amp: amp * 0.18,
+              attack: 1.0 + (i * 0.3),
+              sustain: 4,
+              release: 2,
+              pan: (i - 1.5) * 0.3  # spread stereo
+          end
         end
       end
     end
@@ -183,18 +186,20 @@ live_loop :lead_loop do
 
     with_fx :reverb, room: [reverb * 0.8, 0.7].min, mix: 0.4 do
       with_fx :echo, phase: 0.75, decay: 4, mix: 0.25 do
-        with_fx :lpf, cutoff: cutoff + 20 do
-          if density > 0.5 or one_in(3)
-            # Pick note based on density — higher = more varied
-            note_idx = density > 0.7 ? rand_i(notes.length) : [0, 2, 4, 7].choose
-            n = notes[note_idx % notes.length]
+        with_fx :hpf, cutoff: 65 do
+          with_fx :lpf, cutoff: cutoff + 20 do
+            if density > 0.5 or one_in(3)
+              # Pick note based on density — higher = more varied
+              note_idx = density > 0.7 ? rand_i(notes.length) : [0, 2, 4, 7].choose
+              n = notes[note_idx % notes.length]
 
-            play n,
-              amp: amp * 0.3,
-              attack: 0.05,
-              release: [0.5, 1.0, 1.5, 2.0].choose,
-              cutoff: cutoff + 10,
-              pan: rrand(-0.4, 0.4)
+              play n,
+                amp: amp * 0.3,
+                attack: 0.05,
+                release: [0.5, 1.0, 1.5, 2.0].choose,
+                cutoff: cutoff + 10,
+                pan: rrand(-0.4, 0.4)
+            end
           end
         end
       end
