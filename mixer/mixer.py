@@ -41,7 +41,8 @@ class AutonomousDJ:
             (m for m in self.all_markets if m["slug"] == slug), None
         )
         if market and market["asset_ids"]:
-            self._switch_market_sync(market["asset_ids"][0], market)
+            aid = self._primary_asset(market)
+            self._switch_market_sync(aid, market)
         print(f"[DJ] Playing: {slug}", flush=True)
 
     def unpin(self):
@@ -82,6 +83,15 @@ class AutonomousDJ:
             for m in markets:
                 for asset_id in m["asset_ids"]:
                     self.scorer.set_volume(asset_id, m["volume"])
+                # Seed API prices for all markets
+                self._seed_prices(m)
+
+            # Keep current_market's API prices up to date
+            if self.current_market:
+                fresh = next((m for m in markets if m["slug"] == self.current_market["slug"]), None)
+                if fresh:
+                    self.current_market["outcome_prices"] = fresh.get("outcome_prices", [])
+                    self.current_market["outcomes"] = fresh.get("outcomes", [])
 
             all_asset_ids = [
                 aid for m in markets for aid in m["asset_ids"]
@@ -101,10 +111,9 @@ class AutonomousDJ:
         if not self.all_markets:
             return
 
-        all_asset_ids = [
-            aid for m in self.all_markets for aid in m["asset_ids"]
-        ]
-        ranked = self.scorer.rank(all_asset_ids)
+        # Rank by primary asset per market (the Yes/Up outcome)
+        primary_aids = [self._primary_asset(m) for m in self.all_markets if m["asset_ids"]]
+        ranked = self.scorer.rank(primary_aids)
         hot = [(aid, score) for aid, score in ranked if score > 0]
 
         if not hot:
@@ -140,6 +149,10 @@ class AutonomousDJ:
         self.current_market = market
         self.current_asset = asset_id
 
+        # Seed scorer with API prices so display is correct immediately
+        if market:
+            self._seed_prices(market)
+
         for slot in LAYER_INSTRUMENTS:
             was_playing = slot in self.layers
             self.layers[slot] = {
@@ -154,6 +167,34 @@ class AutonomousDJ:
 
         # Push params immediately so music reacts now
         self._push_all_layers()
+
+    @staticmethod
+    def _primary_asset(market: dict) -> str:
+        """Pick the asset_id for the primary outcome (Yes/Up), matching Polymarket's display."""
+        outcomes = market.get("outcomes", [])
+        asset_ids = market.get("asset_ids", [])
+        if outcomes and asset_ids and len(outcomes) == len(asset_ids):
+            # Prefer the positive outcome
+            for i, name in enumerate(outcomes):
+                if name.lower() in ("yes", "up"):
+                    return asset_ids[i]
+        # Fallback to first
+        return asset_ids[0] if asset_ids else ""
+
+    def _seed_prices(self, market: dict):
+        """Seed the scorer with API prices so values are correct before websocket data arrives."""
+        asset_ids = market.get("asset_ids", [])
+        outcome_prices = market.get("outcome_prices", [])
+        if not asset_ids or not outcome_prices:
+            return
+        for i, aid in enumerate(asset_ids):
+            if i < len(outcome_prices):
+                price = outcome_prices[i]
+                # Only seed if no recent websocket data exists
+                existing = list(self.scorer.price_history.get(aid, []))
+                if not existing:
+                    self.scorer.on_price_change(aid, price)
+                    print(f"[DJ] Seeded price {aid[:8]}... = {price:.4f}", flush=True)
 
     def _push_all_layers(self):
         if not self.current_asset:

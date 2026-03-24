@@ -35,3 +35,17 @@ AMBIENT_MODE_THRESHOLD = 1       # active markets below this → go ambient
 # ── Request mode (Phase 2) ───────────────────────────────
 # Allow a specific market to be pinned as the lead layer
 PINNED_MARKET_SLUG = None        # e.g. "will-trump-veto-the-bill"
+
+# ── Browse categories ──────────────────────────────────
+# Polymarket tag_ids for the Browse tabs in the web UI
+BROWSE_CATEGORIES = [
+    {"label": "Trending",     "tag_id": None,   "sort": "volume"},
+    {"label": "Politics",     "tag_id": 2},
+    {"label": "Sports",       "tag_id": 100639},
+    {"label": "Crypto",       "tag_id": 21},
+    {"label": "Finance",      "tag_id": 120},
+    {"label": "Culture",      "tag_id": 596},
+    {"label": "Geopolitics",  "tag_id": 100265},
+    {"label": "Tech",         "tag_id": 1401},
+    {"label": "Closing Soon", "tag_id": None,   "sort": "closing"},
+]
