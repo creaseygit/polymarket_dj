@@ -120,6 +120,7 @@ class AppState:
             "feed_running": self.feed_running,
             "current_track": self.current_track,
             "tracks": list(self.tracks.keys()),
+            "autonomous": self.dj.autonomous if self.dj else False,
             "pinned": self.dj.pinned_slug if self.dj else None,
             "current_market": market_info,
             "top_markets": top_markets,
@@ -267,10 +268,20 @@ async def handle_pin_market(request):
 
 
 async def handle_unpin(request):
-    """Unpin market, return to autonomous mode."""
+    """Unpin market."""
     if state.dj:
         state.dj.unpin()
         return web.json_response({"ok": True})
+    return web.json_response({"error": "DJ not running"}, status=400)
+
+
+async def handle_autonomous(request):
+    """Toggle autonomous mode."""
+    data = await request.json()
+    enabled = data.get("enabled", False)
+    if state.dj:
+        state.dj.set_autonomous(enabled)
+        return web.json_response({"ok": True, "autonomous": enabled})
     return web.json_response({"error": "DJ not running"}, status=400)
 
 
@@ -311,7 +322,7 @@ async def handle_index(request):
 
 # ── HTML UI ───────────────────────────────────────────────
 
-HTML_PAGE = """<!DOCTYPE html>
+HTML_PAGE = r"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -322,151 +333,173 @@ HTML_PAGE = """<!DOCTYPE html>
   .container { max-width: 900px; margin: 0 auto; padding: 20px; }
   h1 { color: #00ff88; font-size: 24px; margin-bottom: 5px; }
   .subtitle { color: #666; margin-bottom: 20px; font-size: 12px; }
+
   .panel { background: #12121a; border: 1px solid #222; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
-  .panel h2 { color: #00aaff; font-size: 16px; margin-bottom: 12px; }
-  .row { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
-  button { background: #1a1a2e; color: #00ff88; border: 1px solid #00ff88; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 13px; }
+  .panel h2 { color: #00aaff; font-size: 15px; margin-bottom: 12px; }
+
+  .row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+
+  button {
+    background: #1a1a2e; color: #00ff88; border: 1px solid #00ff88;
+    padding: 8px 16px; border-radius: 4px; cursor: pointer;
+    font-family: inherit; font-size: 13px; transition: all 0.15s;
+  }
   button:hover { background: #00ff88; color: #0a0a0f; }
   button.danger { border-color: #ff4444; color: #ff4444; }
   button.danger:hover { background: #ff4444; color: #0a0a0f; }
-  button.active { background: #00ff88; color: #0a0a0f; }
-  select { background: #1a1a2e; color: #e0e0e0; border: 1px solid #333; padding: 8px; border-radius: 4px; font-family: inherit; }
-  .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
-  .dot-on { background: #00ff88; box-shadow: 0 0 6px #00ff88; }
+  button.active { background: #00ff88; color: #0a0a0f; font-weight: bold; }
+  button.active-blue { background: #00aaff; color: #0a0a0f; border-color: #00aaff; }
+  button:disabled { opacity: 0.3; cursor: default; }
+
+  select {
+    background: #1a1a2e; color: #e0e0e0; border: 1px solid #333;
+    padding: 8px 12px; border-radius: 4px; font-family: inherit; font-size: 13px;
+  }
+
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .dot-on { background: #00ff88; box-shadow: 0 0 8px #00ff88; }
   .dot-off { background: #333; }
-  .market-card { background: #0d0d15; border: 1px solid #1a1a2e; border-radius: 6px; padding: 12px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.2s; }
-  .market-card:hover { border-color: #00aaff; }
-  .market-card.playing { border-color: #00ff88; background: #0a1a10; }
-  .market-question { font-size: 13px; margin-bottom: 6px; }
-  .market-meta { font-size: 11px; color: #666; display: flex; gap: 16px; }
-  .heat-bar { width: 60px; height: 6px; background: #1a1a2e; border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; }
-  .heat-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
-  .current-market { background: #0a1a10; border-color: #00ff88; }
-  .osc-params { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
-  .osc-param { background: #0d0d15; padding: 8px; border-radius: 4px; text-align: center; }
-  .osc-param .label { font-size: 10px; color: #666; text-transform: uppercase; }
-  .osc-param .value { font-size: 18px; color: #00aaff; margin-top: 2px; }
-  .mood { font-size: 20px; text-align: center; padding: 10px; }
-  .mood.bullish { color: #00ff88; }
-  .mood.bearish { color: #ff6644; }
-  #log { background: #08080c; border: 1px solid #1a1a2e; border-radius: 4px; padding: 10px; height: 120px; overflow-y: auto; font-size: 11px; color: #555; margin-top: 10px; }
-  .log-entry { margin-bottom: 2px; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; }
-  .badge-green { background: #0a2a10; color: #00ff88; }
-  .badge-red { background: #2a0a0a; color: #ff4444; }
-  .badge-blue { background: #0a0a2a; color: #00aaff; }
+
+  .market-card {
+    background: #0d0d15; border: 1px solid #1a1a2e; border-radius: 6px;
+    padding: 12px 14px; margin-bottom: 6px; cursor: pointer;
+    transition: all 0.15s; display: flex; align-items: center; gap: 12px;
+  }
+  .market-card:hover { border-color: #00aaff; background: #0f0f1a; }
+  .market-card.playing { border-color: #00ff88; background: #081a0e; }
+  .market-rank { color: #444; font-size: 12px; min-width: 22px; }
+  .market-body { flex: 1; min-width: 0; }
+  .market-question { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .market-meta { font-size: 11px; color: #555; margin-top: 3px; display: flex; gap: 14px; }
+  .market-play-badge { color: #00ff88; font-size: 11px; font-weight: bold; white-space: nowrap; }
+
+  .heat-bar { width: 50px; height: 5px; background: #1a1a2e; border-radius: 3px; overflow: hidden; display: inline-block; vertical-align: middle; }
+  .heat-fill { height: 100%; border-radius: 3px; }
+
+  .now-playing {
+    background: #081a0e; border: 1px solid #00ff88; border-radius: 8px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .np-question { font-size: 16px; color: #00ff88; margin-bottom: 8px; }
+  .np-mood { font-size: 22px; font-weight: bold; margin: 8px 0; }
+  .np-mood.bullish { color: #00ff88; }
+  .np-mood.bearish { color: #ff6644; }
+
+  .osc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+  .osc-cell { background: #0a0a12; padding: 8px; border-radius: 4px; text-align: center; }
+  .osc-cell .lbl { font-size: 10px; color: #555; text-transform: uppercase; }
+  .osc-cell .val { font-size: 18px; color: #00aaff; }
+
+  .mode-toggle { display: flex; border: 1px solid #333; border-radius: 4px; overflow: hidden; }
+  .mode-toggle button { border: none; border-radius: 0; flex: 1; }
+  .mode-toggle button:first-child { border-right: 1px solid #333; }
+
+  #log {
+    background: #08080c; border: 1px solid #1a1a2e; border-radius: 4px;
+    padding: 10px; height: 100px; overflow-y: auto; font-size: 11px; color: #444; margin-top: 10px;
+  }
 </style>
 </head>
 <body>
 <div class="container">
   <h1>THE POLYMARKET BAR</h1>
-  <div class="subtitle">Sonic predictions. Real-time. Always.</div>
+  <div class="subtitle">One market. One mood. Real-time.</div>
 
-  <!-- Audio Controls -->
+  <!-- Audio Engine -->
   <div class="panel">
-    <h2>Audio Engine</h2>
+    <h2>Audio</h2>
     <div class="row">
-      <span class="status-dot" id="audio-dot"></span>
-      <span id="audio-status">Stopped</span>
+      <span class="dot" id="audio-dot"></span>
+      <span id="audio-label">Stopped</span>
       <select id="track-select"></select>
-      <button id="btn-start" onclick="startAudio()">Start</button>
-      <button id="btn-stop" class="danger" onclick="stopAudio()">Stop</button>
+      <button onclick="startAudio()">Start</button>
+      <button class="danger" onclick="stopAudio()">Stop</button>
       <button onclick="changeTrack()">Switch Track</button>
-      <button class="danger" onclick="killAll()">Kill All Processes</button>
+      <button class="danger" onclick="killAll()" style="margin-left:auto;">Kill All</button>
     </div>
   </div>
 
-  <!-- Current Market -->
-  <div class="panel" id="current-panel" style="display:none">
-    <h2>Now Playing</h2>
-    <div id="current-market-name" class="market-question" style="font-size:16px; color:#00ff88;"></div>
-    <div id="current-mood" class="mood"></div>
-    <div class="osc-params" id="osc-params"></div>
-    <div class="row" style="margin-top:12px;">
-      <span id="pinned-badge"></span>
-      <button onclick="unpinMarket()">Autonomous Mode</button>
-    </div>
+  <!-- Now Playing -->
+  <div class="now-playing" id="np" style="display:none">
+    <div class="np-question" id="np-question"></div>
+    <div class="np-mood" id="np-mood"></div>
+    <div class="osc-grid" id="np-osc"></div>
   </div>
 
-  <!-- Feed Status -->
+  <!-- Mode + Feed -->
   <div class="panel">
-    <h2>Market Feed</h2>
     <div class="row">
-      <span class="status-dot" id="feed-dot"></span>
-      <span id="feed-status">Disconnected</span>
-      <span style="margin-left:auto; color:#666;" id="event-rate"></span>
+      <span class="dot" id="feed-dot"></span>
+      <span id="feed-label">Feed: disconnected</span>
+      <span style="margin-left:auto; color:#555;" id="event-count"></span>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <span style="color:#666; margin-right:4px;">Mode:</span>
+      <div class="mode-toggle">
+        <button id="btn-manual" onclick="setMode(false)">Manual</button>
+        <button id="btn-auto" onclick="setMode(true)">Autonomous</button>
+      </div>
     </div>
   </div>
 
-  <!-- Top Markets -->
+  <!-- Markets -->
   <div class="panel">
-    <h2>Top Markets <span style="color:#666; font-size:12px;">(click to pin)</span></h2>
-    <div id="markets-list"></div>
+    <h2>Markets <span style="color:#555; font-weight:normal; font-size:12px;">click to play</span></h2>
+    <div id="markets"></div>
   </div>
 
-  <!-- Log -->
   <div id="log"></div>
 </div>
 
 <script>
-const API = '';
 let lastStatus = null;
 
 function log(msg) {
   const el = document.getElementById('log');
   const t = new Date().toLocaleTimeString();
-  el.innerHTML += '<div class="log-entry">[' + t + '] ' + msg + '</div>';
+  el.innerHTML += '<div>[' + t + '] ' + msg + '</div>';
   el.scrollTop = el.scrollHeight;
 }
 
 async function api(path, method='GET', body=null) {
   const opts = { method, headers: {'Content-Type': 'application/json'} };
   if (body) opts.body = JSON.stringify(body);
-  const r = await fetch(API + path, opts);
+  const r = await fetch(path, opts);
   return r.json();
 }
 
 async function startAudio() {
   const track = document.getElementById('track-select').value;
-  log('Starting audio: ' + track);
+  log('Starting: ' + track);
   const r = await api('/api/start', 'POST', {track});
-  if (r.ok) log('Audio started on port ' + r.osc_port);
-  else log('ERROR: ' + r.error);
+  r.ok ? log('Audio on, port ' + r.osc_port) : log('ERR: ' + r.error);
 }
 
 async function stopAudio() {
-  log('Stopping audio...');
   const r = await api('/api/stop', 'POST');
-  if (r.ok) log('Audio stopped');
-  else log('ERROR: ' + r.error);
+  r.ok ? log('Audio stopped') : log('ERR: ' + r.error);
 }
 
 async function changeTrack() {
   const track = document.getElementById('track-select').value;
-  log('Switching track: ' + track);
   const r = await api('/api/track', 'POST', {track});
-  if (r.ok) log('Track switched to ' + r.track);
-  else log('ERROR: ' + r.error);
-}
-
-async function pinMarket(slug) {
-  log('Pinning: ' + slug);
-  const r = await api('/api/pin', 'POST', {slug});
-  if (r.ok) log('Pinned: ' + slug);
-  else log('ERROR: ' + r.error);
+  r.ok ? log('Track: ' + r.track) : log('ERR: ' + r.error);
 }
 
 async function killAll() {
-  log('Killing all audio processes...');
   const r = await api('/api/kill-all', 'POST');
-  if (r.ok) log(r.message);
-  else log('ERROR: ' + r.error);
+  r.ok ? log(r.message) : log('ERR: ' + r.error);
 }
 
-async function unpinMarket() {
-  log('Switching to autonomous mode');
-  const r = await api('/api/unpin', 'POST');
-  if (r.ok) log('Autonomous mode');
+async function playMarket(slug) {
+  log('Playing: ' + slug);
+  const r = await api('/api/pin', 'POST', {slug});
+  r.ok ? log('Now playing: ' + slug) : log('ERR: ' + r.error);
+}
+
+async function setMode(auto) {
+  const r = await api('/api/autonomous', 'POST', {enabled: auto});
+  r.ok ? log(auto ? 'Autonomous mode' : 'Manual mode') : log('ERR: ' + r.error);
 }
 
 function heatColor(h) {
@@ -477,77 +510,75 @@ function heatColor(h) {
 
 function updateUI(s) {
   // Audio
-  document.getElementById('audio-dot').className = 'status-dot ' + (s.audio_running ? 'dot-on' : 'dot-off');
-  document.getElementById('audio-status').textContent = s.audio_running ? 'Running: ' + (s.current_track || '?') : 'Stopped';
+  const ad = document.getElementById('audio-dot');
+  ad.className = 'dot ' + (s.audio_running ? 'dot-on' : 'dot-off');
+  document.getElementById('audio-label').textContent = s.audio_running ? 'Playing: ' + s.current_track : 'Stopped';
 
-  // Tracks
+  // Track dropdown
   const sel = document.getElementById('track-select');
   if (sel.options.length === 0 && s.tracks) {
-    s.tracks.forEach(t => { const o = new Option(t, t); sel.add(o); });
+    s.tracks.forEach(t => sel.add(new Option(t, t)));
   }
 
   // Feed
-  document.getElementById('feed-dot').className = 'status-dot ' + (s.feed_running ? 'dot-on' : 'dot-off');
-  document.getElementById('feed-status').textContent = s.feed_running ? 'Connected' : 'Disconnected';
-  document.getElementById('event-rate').textContent = s.event_rate ? s.event_rate + ' total events' : '';
+  document.getElementById('feed-dot').className = 'dot ' + (s.feed_running ? 'dot-on' : 'dot-off');
+  document.getElementById('feed-label').textContent = s.feed_running ? 'Feed: connected' : 'Feed: disconnected';
+  document.getElementById('event-count').textContent = s.event_rate ? s.event_rate + ' events' : '';
 
-  // Current market
-  const cp = document.getElementById('current-panel');
+  // Mode buttons
+  document.getElementById('btn-manual').className = s.autonomous ? '' : 'active';
+  document.getElementById('btn-auto').className = s.autonomous ? 'active-blue' : '';
+
+  // Now playing
+  const np = document.getElementById('np');
   if (s.current_market) {
-    cp.style.display = '';
-    document.getElementById('current-market-name').textContent = s.current_market.question;
-    const mood = document.getElementById('current-mood');
-    mood.textContent = s.current_market.tone === 'bullish'
-      ? 'BULLISH ' + (s.current_market.price * 100).toFixed(1) + '%'
-      : 'BEARISH ' + (s.current_market.price * 100).toFixed(1) + '%';
-    mood.className = 'mood ' + s.current_market.tone;
+    np.style.display = '';
+    document.getElementById('np-question').textContent = s.current_market.question;
+    const mood = document.getElementById('np-mood');
+    const pct = (s.current_market.price * 100).toFixed(1);
+    mood.textContent = s.current_market.tone.toUpperCase() + '  ' + pct + '%';
+    mood.className = 'np-mood ' + s.current_market.tone;
 
-    // OSC params
     if (s.current_market.osc) {
       const o = s.current_market.osc;
-      document.getElementById('osc-params').innerHTML = [
+      document.getElementById('np-osc').innerHTML = [
         ['AMP', o.amp], ['CUTOFF', o.cutoff], ['REVERB', o.reverb],
         ['DENSITY', o.density], ['TENSION', o.tension], ['HEAT', s.current_market.heat]
-      ].map(([l,v]) => '<div class="osc-param"><div class="label">'+l+'</div><div class="value">'+v+'</div></div>').join('');
+      ].map(([l,v]) =>
+        '<div class="osc-cell"><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>'
+      ).join('');
     }
-
-    // Pinned badge
-    const pb = document.getElementById('pinned-badge');
-    pb.innerHTML = s.pinned
-      ? '<span class="badge badge-blue">PINNED: ' + s.pinned + '</span>'
-      : '<span class="badge badge-green">AUTONOMOUS</span>';
   } else {
-    cp.style.display = 'none';
+    np.style.display = 'none';
   }
 
-  // Markets list
-  const ml = document.getElementById('markets-list');
+  // Market list
+  const ml = document.getElementById('markets');
   if (s.top_markets && s.top_markets.length) {
     ml.innerHTML = s.top_markets.map((m, i) => {
       const pct = Math.round(m.heat * 100);
       const col = heatColor(m.heat);
-      return '<div class="market-card' + (m.playing ? ' playing' : '') + '" onclick="pinMarket(\\''+m.slug+'\\')"><div class="market-question">'
-        + (m.playing ? '>> ' : (i+1) + '. ')
-        + m.question.substring(0, 65) + '</div>'
+      const cls = m.playing ? 'market-card playing' : 'market-card';
+      const slug = m.slug.replace(/'/g, "\\'");
+      return '<div class="' + cls + '" onclick="playMarket(\'' + slug + '\')">'
+        + '<div class="market-rank">' + (i+1) + '</div>'
+        + '<div class="market-body">'
+        + '<div class="market-question">' + m.question.substring(0, 70) + '</div>'
         + '<div class="market-meta">'
-        + '<span>Heat: <span class="heat-bar"><span class="heat-fill" style="width:'+pct+'%;background:'+col+'"></span></span> '+m.heat.toFixed(2)+'</span>'
-        + '<span>Vol: $' + (m.volume/1000).toFixed(0) + 'k</span>'
-        + (m.playing ? '<span class="badge badge-green">PLAYING</span>' : '')
-        + '</div></div>';
+        + '<span><span class="heat-bar"><span class="heat-fill" style="width:'+pct+'%;background:'+col+'"></span></span> '+m.heat.toFixed(2)+'</span>'
+        + '<span>$' + (m.volume/1000).toFixed(0) + 'k</span>'
+        + '</div></div>'
+        + (m.playing ? '<div class="market-play-badge">PLAYING</div>' : '')
+        + '</div>';
     }).join('');
   }
 }
 
-// Poll status
 setInterval(async () => {
-  try {
-    const s = await api('/api/status');
-    updateUI(s);
-    lastStatus = s;
-  } catch(e) {}
+  try { const s = await api('/api/status'); updateUI(s); lastStatus = s; } catch(e) {}
 }, 1500);
 
-log('Dashboard loaded. Click Start to begin.');
+log('Ready. Start audio, then click a market to play.');
 </script>
 </body>
 </html>
@@ -593,6 +624,7 @@ def create_app():
     app.router.add_post("/api/track", handle_change_track)
     app.router.add_post("/api/pin", handle_pin_market)
     app.router.add_post("/api/unpin", handle_unpin)
+    app.router.add_post("/api/autonomous", handle_autonomous)
     app.router.add_post("/api/kill-all", handle_kill_all)
 
     return app
