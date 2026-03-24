@@ -14,11 +14,14 @@ Usage:
 """
 import asyncio
 import atexit
+import socket
 import subprocess
 import sys
 import os
+import threading
 from pathlib import Path
 from pythonosc import udp_client
+from pythonosc.osc_message import OscMessage
 
 # Track all spawned processes so we can clean up on crash/exit
 _spawned_processes = []
@@ -132,6 +135,9 @@ class SonicPiHeadless:
         self._daemon_client = udp_client.SimpleUDPClient("127.0.0.1", self.daemon_port)
         self._spider_client = udp_client.SimpleUDPClient("127.0.0.1", self.gui_send_port)
 
+        # Listen for errors from Spider on gui_listen_port
+        self._start_error_listener()
+
         # Start keep-alive loop
         self._keepalive_task = asyncio.create_task(self._keepalive_loop())
 
@@ -166,6 +172,33 @@ class SonicPiHeadless:
 
         return await loop.run_in_executor(None, _read)
 
+    def _start_error_listener(self):
+        """Listen on gui_listen_port for error messages from Spider."""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind(("127.0.0.1", self.gui_listen_port))
+
+        def _listen():
+            while True:
+                try:
+                    data, _ = sock.recvfrom(16384)
+                    try:
+                        msg = OscMessage(data)
+                        addr = msg.address
+                        if "error" in addr or "syntax" in addr:
+                            print(f"[SONIC PI ERROR] {addr}: {msg.params}", flush=True)
+                        elif addr == "/log/multi_message":
+                            # Spider sends log messages here too
+                            pass
+                        else:
+                            print(f"[SONIC PI MSG] {addr}", flush=True)
+                    except Exception:
+                        pass
+                except Exception:
+                    break
+
+        t = threading.Thread(target=_listen, daemon=True)
+        t.start()
+
     async def _keepalive_loop(self):
         """Send keep-alive pings to the daemon every 2 seconds."""
         while True:
@@ -197,7 +230,13 @@ class SonicPiHeadless:
         if not path.exists():
             raise FileNotFoundError(f"Track not found: {filepath}")
         code = path.read_text(encoding="utf-8")
-        await self.run_code(code)
+        # Strip comment-only lines and blank lines to stay within
+        # Sonic Pi's 16384-byte UDP receive buffer
+        lines = code.split('\n')
+        stripped = [l for l in lines if l.strip() and not l.strip().startswith('#')]
+        compact = '\n'.join(stripped)
+        print(f"[SONIC PI] Track {path.name}: {len(code)}→{len(compact)} bytes (stripped comments)", flush=True)
+        await self.run_code(compact)
 
     async def stop_code(self):
         """Stop all running code."""
