@@ -1,4 +1,5 @@
 import time
+import math
 from collections import defaultdict, deque
 from config import (
     WEIGHT_PRICE_VELOCITY, WEIGHT_TRADE_RATE,
@@ -16,11 +17,14 @@ class MarketScorer:
         # price history: market_id → deque of (timestamp, price)
         self.price_history  = defaultdict(lambda: deque(maxlen=20))
         # trade events: market_id → deque of timestamps
-        self.trade_times    = defaultdict(lambda: deque(maxlen=100))
+        self.trade_times    = defaultdict(lambda: deque(maxlen=500))
         # best bid/ask: market_id → (bid, ask)
         self.spreads        = defaultdict(lambda: (0.4, 0.6))
         # 24h volume from Gamma REST (static per fetch cycle)
         self.volumes        = defaultdict(float)
+        # Adaptive trade rate: EMA of trades/min per market
+        self._rate_ema      = defaultdict(float)    # smoothed baseline
+        self._rate_last_t   = defaultdict(float)    # last EMA update time
 
     # ── Feed methods (called by WebSocket handler) ────────
 
@@ -48,12 +52,43 @@ class MarketScorer:
         prices = [p for _, p in recent]
         return min(1.0, abs(prices[-1] - prices[0]) / max(prices[0], 0.01))
 
-    def trade_rate(self, market_id: str, window: int = 60) -> float:
-        """Trades per minute over last `window` seconds. Returns 0–1."""
+    def _raw_trade_rate(self, market_id: str, window: int = 60) -> float:
+        """Raw trades per minute over last `window` seconds."""
         now = time.time()
         recent = [t for t in self.trade_times[market_id] if now - t < window]
-        rate = len(recent)  # trades in last minute
-        return min(1.0, rate / 20.0)   # 20 trades/min = full score
+        return len(recent) * (60.0 / window)
+
+    def trade_rate(self, market_id: str, window: int = 60) -> float:
+        """Adaptive trade rate 0–1. Uses log curve relative to a rolling
+        baseline so it self-calibrates to any market's activity level.
+
+        - EMA tracks what 'normal' looks like (slow-moving baseline)
+        - Current rate is compared to baseline: ratio > 1 = busier than usual
+        - Log curve compresses the ratio so huge spikes don't just pin at 1.0
+        - Result: 0.5 = baseline activity, >0.5 = above normal, <0.5 = quieter
+        """
+        raw = self._raw_trade_rate(market_id, window)
+
+        # Update EMA baseline (~90s half-life: alpha ≈ 0.03 at 3s intervals)
+        now = time.time()
+        dt = now - self._rate_last_t[market_id]
+        if self._rate_last_t[market_id] == 0:
+            # First call — seed baseline with current rate
+            self._rate_ema[market_id] = max(raw, 1.0)
+            self._rate_last_t[market_id] = now
+        elif dt >= 2.0:
+            alpha = min(1.0, dt / 90.0)  # ~90s to converge
+            self._rate_ema[market_id] += alpha * (raw - self._rate_ema[market_id])
+            self._rate_ema[market_id] = max(self._rate_ema[market_id], 1.0)  # floor
+            self._rate_last_t[market_id] = now
+
+        baseline = self._rate_ema[market_id]
+        # Ratio: 1.0 = at baseline, 2.0 = double, 0.5 = half
+        ratio = raw / baseline if baseline > 0 else 0.0
+        # Log curve: log2(ratio+1) maps 0→0, 1→1, 3→2, 7→3
+        # Normalise so ratio=1 (baseline) → 0.5, ratio=3 → ~0.8
+        score = math.log2(ratio + 1.0) / 2.5
+        return max(0.0, min(1.0, score))
 
     def spread_score(self, market_id: str) -> float:
         """Tight spread = active market. Returns 0–1 (higher = tighter)."""
@@ -67,8 +102,8 @@ class MarketScorer:
 
     def heat(self, market_id: str) -> float:
         """Composite heat score 0.0–1.0."""
-        # Dead market floor check
-        if self.trade_rate(market_id) < (MIN_TRADE_RATE / 20.0):
+        # Dead market floor check — fewer than MIN_TRADE_RATE raw trades/min
+        if self._raw_trade_rate(market_id) < MIN_TRADE_RATE:
             return 0.0
 
         return (
