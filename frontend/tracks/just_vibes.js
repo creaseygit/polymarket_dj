@@ -12,11 +12,13 @@ class JustVibesTrack {
     this.lastSpikeAt = 0;
     this.disposed = false;
     this.samplesReady = false;
-    this.players = {};        // reusable Tone.Player pool per sample
-    this.sampleBuffers = {};  // cached Tone.ToneAudioBuffer per sample
 
-    // ── Volume: set_volume! 0.7 handled by masterGain in audio-engine ──
-    // All amp factors below match the Sonic Pi original exactly.
+    // ── Preload samples ──
+    const sampleNames = ['bd_fat', 'sn_dub', 'drum_cymbal_closed', 'drum_cowbell', 'vinyl_hiss', 'drum_cymbal_soft'];
+    sampleBank.preload(sampleNames).then(() => {
+      if (this.disposed) return;
+      this.samplesReady = true;
+    });
 
     // ── Sub bass (sine + LPF cutoff 50 MIDI) ──
     this.subFilter = new Tone.Filter({ frequency: midiToHz(50), type: 'lowpass' }).connect(destination);
@@ -29,7 +31,7 @@ class JustVibesTrack {
     this.bassFilter = new Tone.Filter({ frequency: midiToHz(52), type: 'lowpass' }).connect(destination);
     this.bassSynth = new Tone.MonoSynth({
       oscillator: { type: 'sawtooth' },
-      filter: { type: 'lowpass', Q: 0.12 * 30 },  // res 0.12 scaled
+      filter: { type: 'lowpass', Q: 0.12 * 30 },
       envelope: { attack: 0.01, decay: 0.25, sustain: 0, release: 0.1 },
       filterEnvelope: {
         attack: 0.01, decay: 0.15, sustain: 0.1, release: 0.1,
@@ -37,13 +39,28 @@ class JustVibesTrack {
       },
     }).connect(this.bassFilter);
 
-    // ── Pad (:hollow → triangle + slow attack + heavy reverb + LPF) ──
+    // ── Kick LPF chains (Sonic Pi cutoff on samples) ──
+    this.kickFilter = new Tone.Filter({ frequency: midiToHz(60), type: 'lowpass' }).connect(destination);
+    this.kickGhostFilter = new Tone.Filter({ frequency: midiToHz(50), type: 'lowpass' }).connect(destination);
+
+    // ── Snare reverb chains ──
+    this.snareReverb = new Tone.Reverb({ decay: 2.8, wet: 0.55 }).connect(destination);
+    this.snareGhostReverb = new Tone.Reverb({ decay: 3, wet: 0.65 }).connect(destination);
+
+    // ── Hat HPF ──
+    this.hatHPF = new Tone.Filter({ frequency: midiToHz(105), type: 'highpass' }).connect(destination);
+
+    // ── Pad (:hollow → triangle + noise layer + slow attack + heavy reverb + LPF) ──
     this.padReverb = new Tone.Reverb({ decay: 5, wet: 0.7 }).connect(destination);
     this.padFilter = new Tone.Filter({ frequency: midiToHz(58), type: 'lowpass' }).connect(this.padReverb);
     this.padSynth = new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: 'triangle' },
       envelope: { attack: 2.5, decay: 1, sustain: 0.5, release: 5 },
     }).connect(this.padFilter);
+    // Noise layer for breathy :hollow character
+    this.padNoiseFilter = new Tone.Filter({ frequency: midiToHz(58), type: 'bandpass', Q: 2 }).connect(this.padReverb);
+    this.padNoiseGain = new Tone.Gain(0).connect(this.padNoiseFilter);
+    this.padNoise = new Tone.Noise('pink').connect(this.padNoiseGain);
 
     // ── Deep echo (:dark_ambience → detuned saw pair + echo + LPF) ──
     this.deepFilter = new Tone.Filter({ frequency: midiToHz(65), type: 'lowpass' }).connect(destination);
@@ -53,17 +70,10 @@ class JustVibesTrack {
       envelope: { attack: 1.5, decay: 0.5, sustain: 0.3, release: 4 },
     }).connect(this.deepDelay);
 
-    // ── Snare reverb chains ──
-    this.snareReverb = new Tone.Reverb({ decay: 2.8, wet: 0.55 }).connect(destination);
-    this.snareGhostReverb = new Tone.Reverb({ decay: 3, wet: 0.65 }).connect(destination);
-
-    // ── Hat HPF ──
-    this.hatHPF = new Tone.Filter({ frequency: midiToHz(105), type: 'highpass' }).connect(destination);
-
     // ── Spike reverb ──
     this.spikeReverb = new Tone.Reverb({ decay: 2.8, wet: 0.65 }).connect(destination);
 
-    // ── Price drift: :piano → FM synth with quick attack/medium decay + reverb + LPF ──
+    // ── Price drift: :piano → FM synth + reverb + LPF ──
     this.priceDriftFilter = new Tone.Filter({ frequency: midiToHz(82), type: 'lowpass' }).connect(destination);
     this.priceDriftReverb = new Tone.Reverb({ decay: 4, wet: 0.75 }).connect(this.priceDriftFilter);
     this.priceDriftSynth = new Tone.PolySynth(Tone.FMSynth, {
@@ -105,48 +115,67 @@ class JustVibesTrack {
       envelope: { attack: 4, decay: 0.5, sustain: 0.3, release: 8 },
     }).connect(this.droneReverb);
 
-    // ── Preload samples ──
-    this._preloadSamples();
     this._buildLoops();
   }
 
-  async _preloadSamples() {
-    const names = ['bd_fat', 'sn_dub', 'drum_cymbal_closed', 'drum_cowbell', 'vinyl_hiss', 'drum_cymbal_soft'];
-    try {
-      await sampleBank.preload(names);
-      for (const name of names) {
-        this.sampleBuffers[name] = await sampleBank.load(name);
-      }
-      this.samplesReady = true;
-    } catch (e) {
-      console.warn('[JustVibes] Sample preload failed:', e);
-    }
-  }
+  /**
+   * Play a sample with Sonic Pi-compatible parameters.
+   * Matches mezzanine's _playSample signature for consistency.
+   */
+  _playSample(name, time, opts = {}) {
+    if (!this.samplesReady || this.disposed) return;
 
-  /** Create a one-shot Tone.Player for a sample, connected to the given destination node. */
-  _playSample(name, dest, time, opts = {}) {
-    if (!this.samplesReady || !this.sampleBuffers[name]) return;
-    const player = new Tone.Player(this.sampleBuffers[name]);
-    player.connect(dest);
-    if (opts.playbackRate !== undefined) player.playbackRate = opts.playbackRate;
-    // Tone.Player doesn't have a volume property that takes amp directly;
-    // we apply volume via a Gain node if amp != 1.
-    if (opts.amp !== undefined && opts.amp !== 1) {
-      const g = new Tone.Gain(opts.amp);
-      player.disconnect();
-      player.connect(g);
-      g.connect(dest);
-      player.onstop = () => { try { g.dispose(); player.dispose(); } catch (e) {} };
-    } else {
-      player.onstop = () => { try { player.dispose(); } catch (e) {} };
-    }
-    player.start(time);
-    // Auto-dispose after a reasonable duration
-    const duration = (opts.disposeDuration || 4);
-    Tone.Transport.scheduleOnce(() => {
-      try { player.stop(); } catch (e) {}
-    }, time + duration);
-    return player;
+    sampleBank.load(name).then((buf) => {
+      if (this.disposed) return;
+
+      const p = new Tone.Player(buf);
+
+      if (opts.playbackRate !== undefined) {
+        p.playbackRate = opts.playbackRate;
+      }
+
+      // Build signal chain: player -> gain -> [panner] -> destination
+      const dest = opts.destination || this.dest;
+      let tail = dest;
+
+      // Panning (Sonic Pi pan: parameter)
+      let panner = null;
+      if (opts.pan !== undefined) {
+        panner = new Tone.Panner(opts.pan).connect(tail);
+        tail = panner;
+      }
+
+      // Gain for amplitude control
+      const amp = opts.amp !== undefined ? opts.amp : 1;
+      const gain = new Tone.Gain(amp).connect(tail);
+      p.connect(gain);
+
+      try {
+        p.start(time);
+
+        // Sonic Pi finish: parameter — stop playback after finish fraction of sample
+        const rate = opts.playbackRate || 1;
+        const fullDur = buf.duration / rate;
+        const finishDur = opts.finish !== undefined
+          ? fullDur * opts.finish
+          : fullDur;
+
+        if (opts.finish !== undefined) {
+          Tone.Transport.scheduleOnce(() => {
+            try { p.stop(); } catch (e) {}
+          }, time + finishDur);
+        }
+
+        // Dispose after full decay
+        const disposeDur = (finishDur + 1.5) * 1000;
+        setTimeout(() => {
+          try { p.stop(); } catch (e) {}
+          try { p.dispose(); } catch (e) {}
+          try { gain.dispose(); } catch (e) {}
+          if (panner) try { panner.dispose(); } catch (e) {}
+        }, disposeDur);
+      } catch (e) {}
+    });
   }
 
   _getRoots() {
@@ -163,11 +192,9 @@ class JustVibesTrack {
          ['G2', 'A#2', 'D3', 'F3'], ['A2', 'C3', 'E3', 'G3']];
   }
 
-  /** Utility: random float in [min, max) */
   _rrand(min, max) { return min + Math.random() * (max - min); }
 
-  /** Utility: seconds per beat at 75 BPM */
-  _beatSec(beats) { return beats * (60 / 75); }
+  _choose(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
   _buildLoops() {
     const self = this;
@@ -178,106 +205,97 @@ class JustVibesTrack {
       self.chordIdx = (self.chordIdx + 1) % 4;
     }, bps * 4);
 
-    // ── Vinyl: every 8 beats, sample :vinyl_hiss rate: 0.7 ──
+    // ── Vinyl: every 8 beats ──
     this.vinylLoop = new Tone.Loop((time) => {
-      self._playSample('vinyl_hiss', self.dest, time, {
-        amp: 0.05 * 5.0,         // ~nf
+      self._playSample('vinyl_hiss', time, {
+        amp: 0.05 * 5.0,
         playbackRate: 0.7,
-        disposeDuration: bps * 8,
       });
     }, bps * 8);
 
     // ── Kick: every 4 beats ──
-    // Beat 1: full kick. Beat 1.5: ghost if tr > 0.4 && rand < 0.25. Beat 3: second kick.
+    // Sonic Pi: sample :bd_fat, cutoff: 60, rate: 0.8
     this.kickLoop = new Tone.Loop((time) => {
       const h = self.data.heat;
       const tr = self.data.trade_rate;
-      const amp_val = (0.18 + h * 0.1) * 1.59;  // ~nf
+      const amp_val = (0.18 + h * 0.1) * 1.59;
 
-      // Beat 1: sample :bd_fat, cutoff: 60, rate: 0.8
-      self._playSample('bd_fat', self.dest, time, {
-        amp: amp_val, playbackRate: 0.8, disposeDuration: 2,
+      // Beat 1: cutoff: 60
+      self._playSample('bd_fat', time, {
+        amp: amp_val, playbackRate: 0.8,
+        destination: self.kickFilter,       // LPF cutoff: 60
       });
 
-      // Ghost kick at beat 1.5 if conditions met
+      // Ghost kick at beat 1.5: cutoff: 50
       if (tr > 0.4 && Math.random() < 0.25) {
-        self._playSample('bd_fat', self.dest, time + bps * 1.5, {
-          amp: amp_val * 0.25, playbackRate: 0.75, disposeDuration: 1.5,
+        self._playSample('bd_fat', time + bps * 1.5, {
+          amp: amp_val * 0.25, playbackRate: 0.75,
+          destination: self.kickGhostFilter, // LPF cutoff: 50
         });
       }
 
-      // Beat 3: second kick
-      self._playSample('bd_fat', self.dest, time + bps * 2, {
-        amp: amp_val * 0.9, playbackRate: 0.8, disposeDuration: 2,
+      // Beat 3: cutoff: 60
+      self._playSample('bd_fat', time + bps * 2, {
+        amp: amp_val * 0.9, playbackRate: 0.8,
+        destination: self.kickFilter,
       });
     }, bps * 4);
 
     // ── Snare: offset 2 beats, every 4 beats ──
+    // Sonic Pi: finish: 0.25, ghost finish: 0.15
     this.snareLoop = new Tone.Loop((time) => {
       const h = self.data.heat;
-      const amp = (0.06 + h * 0.04) * 0.77;  // ~nf
+      const amp = (0.06 + h * 0.04) * 0.77;
 
-      // Main snare with reverb(room:0.85, damp:0.6, mix:0.55)
-      self._playSample('sn_dub', self.snareReverb, time, {
-        amp: amp, playbackRate: 0.85, disposeDuration: 2,
+      self._playSample('sn_dub', time, {
+        amp: amp, playbackRate: 0.85,
+        finish: 0.25,                       // tight lo-fi snare
+        destination: self.snareReverb,
       });
 
-      // Ghost snare at beat 3.75 (1.75 beats after snare hit) if rand < 0.15
+      // Ghost snare: finish: 0.15 (even tighter)
       if (Math.random() < 0.15) {
-        self._playSample('sn_dub', self.snareGhostReverb, time + bps * 1.75, {
-          amp: 0.025 * 0.77, playbackRate: 0.9, disposeDuration: 1.5,
+        self._playSample('sn_dub', time + bps * 1.75, {
+          amp: 0.025 * 0.77, playbackRate: 0.9,
+          finish: 0.15,
+          destination: self.snareGhostReverb,
         });
       }
     }, bps * 4);
 
-    // ── Hats: every 0.5 or 0.25 beats depending on trade_rate ──
-    // Using dynamic scheduling since interval changes with trade_rate
-    this.hatStep = 0;
-    this.hatLoop = new Tone.Loop((time) => {
-      const tr = self.data.trade_rate;
-      const prob = 0.12 + tr * 0.35;
-      if (Math.random() < prob) {
-        const amp = self._rrand(0.015, 0.04) * 2.2;  // ~nf
-        const rate = self._rrand(1.3, 1.7);
-        const pan = self._rrand(-0.3, 0.3);
-        // HPF cutoff 105 MIDI → use hatHPF
-        self._playSample('drum_cymbal_closed', self.hatHPF, time, {
-          amp: amp, playbackRate: rate, disposeDuration: 0.5,
-        });
-      }
-    }, bps * 0.25);  // tick at 16th notes; we conditionally play
-
-    // To match the original's dynamic sleep (0.25 vs 0.5), we use 0.25 base
-    // and skip alternate ticks when trade_rate <= 0.5
+    // ── Hats: 16th note grid, skip odd ticks when tr <= 0.5 ──
+    // Sonic Pi: finish: 0.04, pan: rrand(-0.3, 0.3)
     this.hatTickCount = 0;
-    // Override the hat loop with a smarter version
-    this.hatLoop.dispose();
     this.hatLoop = new Tone.Loop((time) => {
       const tr = self.data.trade_rate;
       self.hatTickCount++;
-      // If tr <= 0.5, only play on even ticks (every 0.5 beats)
       if (tr <= 0.5 && self.hatTickCount % 2 !== 0) return;
 
       const prob = 0.12 + tr * 0.35;
       if (Math.random() < prob) {
-        const amp = self._rrand(0.015, 0.04) * 2.2;  // ~nf
-        const rate = self._rrand(1.3, 1.7);
-        self._playSample('drum_cymbal_closed', self.hatHPF, time, {
-          amp: amp, playbackRate: rate, disposeDuration: 0.5,
+        const amp = self._rrand(0.015, 0.04) * 2.2;
+        self._playSample('drum_cymbal_closed', time, {
+          amp: amp,
+          playbackRate: self._rrand(1.3, 1.7),
+          finish: 0.04,                     // crisp tick
+          pan: self._rrand(-0.3, 0.3),
+          destination: self.hatHPF,
         });
       }
     }, bps * 0.25);
 
     // ── Rim: every 0.25 beats, 16-step pattern ──
+    // Sonic Pi: finish: 0.03, pan: rrand(-0.15, 0.15)
     this.rimStep = 0;
     this.rimPattern = [0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0];
     this.rimLoop = new Tone.Loop((time) => {
       const tr = self.data.trade_rate;
       if (tr > 0.2 && self.rimPattern[self.rimStep % 16] === 1) {
-        self._playSample('drum_cowbell', self.dest, time, {
-          amp: 0.02 * 0.52,  // ~nf
+        self._playSample('drum_cowbell', time, {
+          amp: 0.02 * 0.52,
           playbackRate: 2.8,
-          disposeDuration: 0.5,
+          finish: 0.03,                     // tiny tick
+          pan: self._rrand(-0.15, 0.15),
         });
       }
       self.rimStep++;
@@ -288,7 +306,7 @@ class JustVibesTrack {
       const h = self.data.heat;
       const roots = self._getRoots();
       const root = roots[self.chordIdx];
-      const amp = (0.14 + h * 0.06) * 0.23 * 0.39;  // ~nf
+      const amp = (0.14 + h * 0.06) * 0.23 * 0.39;
       self.subSynth.triggerAttackRelease(root, bps * 3 + bps * 0.8, time, amp);
     }, bps * 4);
 
@@ -302,20 +320,17 @@ class JustVibesTrack {
       const roots = self._getRoots();
       const rootMidi = noteToMidi(roots[self.chordIdx]);
       const rn = rootMidi;
-      const amp_val = (0.05 + h * 0.03) * 0.6 * 0.59;  // ~nf
+      const amp_val = (0.05 + h * 0.03) * 0.6 * 0.59;
 
-      // Original phrases: [note_or_rest, duration, ...]
-      // :r means rest
-      const R = null;  // rest marker
+      const R = null;
       const phrases = [
         [rn, 1.5, R, 0.5, rn + 7, 0.5, R, 0.5, rn, 0.5],
         [R, 0.5, rn, 1.0, rn + 5, 0.5, R, 0.5, rn, 1.5],
         [rn, 1.0, R, 0.5, rn + 7, 0.5, rn + 5, 0.5, R, 0.5, rn, 0.5, R, 0.5],
         [rn, 0.5, R, 1.0, rn + 3, 0.5, rn, 1.0, R, 1.0],
       ];
-      const phrase = phrases[Math.floor(Math.random() * phrases.length)];
+      const phrase = self._choose(phrases);
 
-      // Walk through phrase: pairs of [note, duration_in_beats]
       let offset = 0;
       for (let i = 0; i < phrase.length; i += 2) {
         const n = phrase[i];
@@ -330,11 +345,10 @@ class JustVibesTrack {
       }
     }, bps * 4);
 
-    // ── Pad wash: every 6-8 beats (random) ──
-    // Since Tone.Loop needs fixed interval, schedule recursively
+    // ── Pad wash: self-scheduling for random 6-8 beat intervals ──
     this._schedulePad();
 
-    // ── Deep echo: every 10-14 beats (random) ──
+    // ── Deep echo: self-scheduling for random 10-14 beat intervals ──
     this._scheduleDeep();
 
     // ── Price drift: every 3 seconds ──
@@ -342,37 +356,43 @@ class JustVibesTrack {
       self._playPriceDrift(time);
     }, 3);
 
-    // ── Event move: every 0.5 seconds (polls event_price_move) ──
-    // Handled via onEvent instead of polling
-
     // ── Ambient drone: every 8 beats ──
     this.droneLoop = new Tone.Loop((time) => {
       if (self.data.ambient_mode === 1) {
         const notes = ['F2', 'C3', 'F3'];
-        const note = notes[Math.floor(Math.random() * notes.length)];
-        const amp = 0.06 * 5.0 * 5.0;  // ~nf
+        const note = self._choose(notes);
+        const amp = 0.06 * 5.0 * 5.0;
         self.droneSynth.triggerAttackRelease(note, bps * 8, time, amp);
       }
     }, bps * 8);
-
-    // ── Spike event: handled via onEvent ──
   }
 
   _schedulePad() {
     if (this.disposed) return;
     const self = this;
     const bps = 60 / 75;
-    const beats = [6, 8][Math.floor(Math.random() * 2)];
+    const beats = self._choose([6, 8]);
     const intervalSec = bps * beats;
 
     this.padEvent = Tone.Transport.scheduleOnce((time) => {
       const h = self.data.heat;
       const pr = self.data.price;
-      self.padFilter.frequency.rampTo(midiToHz(58 + pr * 18), 0.5);
-      const amp = Math.max(0.012, 0.045 - h * 0.02) * 2.66 * 2.15;  // ~nf
+      const cutFreq = midiToHz(58 + pr * 18);
+      self.padFilter.frequency.rampTo(cutFreq, 0.5);
+      // Tune noise bandpass to follow pad cutoff for breathy character
+      self.padNoiseFilter.frequency.rampTo(cutFreq, 0.5);
+
+      const amp = Math.max(0.012, 0.045 - h * 0.02) * 2.66 * 2.15;
       const chords = self._getChords();
       const chord = chords[self.chordIdx];
       self.padSynth.triggerAttackRelease(chord, bps * 5, time, amp);
+
+      // Swell noise layer for :hollow breathiness
+      self.padNoiseGain.gain.cancelScheduledValues(time);
+      self.padNoiseGain.gain.setValueAtTime(0, time);
+      self.padNoiseGain.gain.linearRampToValueAtTime(amp * 0.12, time + 2);
+      self.padNoiseGain.gain.linearRampToValueAtTime(0, time + 5);
+
       self._schedulePad();
     }, Tone.Transport.seconds + intervalSec);
   }
@@ -381,16 +401,16 @@ class JustVibesTrack {
     if (this.disposed) return;
     const self = this;
     const bps = 60 / 75;
-    const beats = [10, 12, 14][Math.floor(Math.random() * 3)];
+    const beats = self._choose([10, 12, 14]);
     const intervalSec = bps * beats;
 
     this.deepEvent = Tone.Transport.scheduleOnce((time) => {
       const v = self.data.velocity;
       if (v > 0.25) {
         const roots = self._getRoots();
-        const root = roots[Math.floor(Math.random() * roots.length)];
-        const rootMidi = noteToMidi(root) + 24;  // up 2 octaves
-        const amp = (0.025 + v * 0.025) * 5.0 * 5.0;  // ~nf
+        const root = self._choose(roots);
+        const rootMidi = noteToMidi(root) + 24;
+        const amp = (0.025 + v * 0.025) * 5.0 * 5.0;
         self.deepSynth.triggerAttackRelease(midiToNote(rootMidi), bps * 4, time, amp);
       }
       self._scheduleDeep();
@@ -411,13 +431,12 @@ class JustVibesTrack {
     const vol = Math.min(Math.max(0.04 + mag * 0.1, 0.04), 0.11);
     const ns = pd > 0 ? sc.slice(0, num) : sc.slice(0, num).reverse();
 
-    const sleepOptions = [0.5, 0.75, 1.0];
     let offset = 0;
     ns.forEach((n) => {
       const vl = vol * this._rrand(0.6, 1.0);
-      const amp = vl * 0.97 * 0.95;  // ~nf
+      const amp = vl * 0.97 * 0.95;
       this.priceDriftSynth.triggerAttackRelease(n, '4n', time + offset, amp);
-      offset += sleepOptions[Math.floor(Math.random() * sleepOptions.length)];
+      offset += this._choose([0.5, 0.75, 1.0]);
     });
   }
 
@@ -428,7 +447,7 @@ class JustVibesTrack {
     this.chordLoop.start(0);
     this.vinylLoop.start(0);
     this.kickLoop.start(0);
-    this.snareLoop.start(bps * 2);  // offset 2 beats like original
+    this.snareLoop.start(bps * 2);  // offset 2 beats
     this.hatLoop.start(0);
     this.rimLoop.start(0);
     this.subLoop.start(0);
@@ -436,7 +455,8 @@ class JustVibesTrack {
     this.priceDriftLoop.start(0);
     this.droneLoop.start(0);
 
-    // Pad and deep are self-scheduling via Transport.scheduleOnce
+    // Start noise source for pad breathiness
+    this.padNoise.start();
 
     Tone.Transport.start();
   }
@@ -445,13 +465,11 @@ class JustVibesTrack {
     if (this.disposed) return;
     this.disposed = true;
 
-    // Stop all loops
     [this.chordLoop, this.vinylLoop, this.kickLoop, this.snareLoop,
      this.hatLoop, this.rimLoop, this.subLoop, this.bassLoop,
      this.priceDriftLoop, this.droneLoop,
     ].forEach(l => { if (l) { try { l.stop(); l.dispose(); } catch (e) {} } });
 
-    // Cancel scheduled events
     if (this.padEvent !== undefined) {
       try { Tone.Transport.clear(this.padEvent); } catch (e) {}
     }
@@ -462,10 +480,11 @@ class JustVibesTrack {
     Tone.Transport.stop();
     Tone.Transport.cancel();
 
-    // Dispose all audio nodes
     [this.subSynth, this.subFilter,
      this.bassSynth, this.bassFilter,
+     this.kickFilter, this.kickGhostFilter,
      this.padSynth, this.padFilter, this.padReverb,
+     this.padNoise, this.padNoiseGain, this.padNoiseFilter,
      this.deepSynth, this.deepDelay, this.deepFilter,
      this.snareReverb, this.snareGhostReverb,
      this.hatHPF,
@@ -485,20 +504,18 @@ class JustVibesTrack {
     if (this.disposed) return;
     const now = Tone.now();
 
-    // ── Spike event: drum_cymbal_soft, rate: 0.45 with reverb ──
     if (type === 'spike') {
       const elapsed = Date.now() - this.lastSpikeAt;
       if (elapsed >= this.spikeCooldown) {
         this.lastSpikeAt = Date.now();
-        this._playSample('drum_cymbal_soft', this.spikeReverb, now, {
-          amp: 0.06 * 1.87,  // ~nf
+        this._playSample('drum_cymbal_soft', now, {
+          amp: 0.06 * 1.87,
           playbackRate: 0.45,
-          disposeDuration: 5,
+          destination: this.spikeReverb,
         });
       }
     }
 
-    // ── Price move event: :piano arpeggios with reverb + echo + LPF ──
     if (type === 'price_move') {
       const dir = msg.direction || 1;
       const t = this.data.tone;
@@ -507,20 +524,18 @@ class JustVibesTrack {
       const sc = getScaleNotes(scaleRoot, scaleType, 7, 2);
       const ns = dir > 0 ? sc : sc.slice().reverse();
 
-      const sleepOptions = [0.4, 0.5, 0.6];
       let offset = 0;
       ns.forEach((n, i) => {
         const frac = i / Math.max(ns.length - 1, 1);
         const amp_env = dir > 0
           ? 0.09 * (0.5 + frac * 0.3)
           : 0.09 * (0.9 - frac * 0.3);
-        const amp = amp_env * 0.97 * 0.95;  // ~nf
+        const amp = amp_env * 0.97 * 0.95;
         this.eventMoveSynth.triggerAttackRelease(n, '4n', now + offset, amp);
-        offset += sleepOptions[Math.floor(Math.random() * sleepOptions.length)];
+        offset += this._choose([0.4, 0.5, 0.6]);
       });
     }
 
-    // ── Resolved event: :piano scale run with reverb + echo ──
     if (type === 'resolved') {
       const result = msg.result || 1;
       const scaleRoot = result === 1 ? 'F4' : 'D4';
@@ -530,7 +545,7 @@ class JustVibesTrack {
 
       sc.forEach((n, i) => {
         const frac = i / Math.max(sc.length - 1, 1);
-        const amp = 0.09 * (0.5 + frac * 0.5) * 0.97 * 0.95;  // ~nf
+        const amp = 0.09 * (0.5 + frac * 0.5) * 0.97 * 0.95;
         this.resolvedSynth.triggerAttackRelease(n, '4n', now + i * 0.5, amp);
       });
     }

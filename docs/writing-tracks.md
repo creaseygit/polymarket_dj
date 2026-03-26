@@ -86,12 +86,129 @@ Sample names match Sonic Pi exactly (without the colon prefix): `bd_fat`, `sn_du
 | Sonic Pi synth | Tone.js equivalent | Notes |
 | --- | --- | --- |
 | `:piano` | `Tone.FMSynth` (harmonicity: 2–3) | `hard` → modulationIndex, `vel` → envelope decay |
-| `:pluck` | `Tone.PluckSynth` | `coeff` → resonance (lower coeff = more resonant) |
+| `:pluck` | `Tone.PluckSynth` | `coeff` 0.1–0.2 → `resonance` 0.88–0.95 (see gotcha below) |
 | `:tb303` | `Tone.MonoSynth` (sawtooth) | Match filter envelope and Q/resonance |
-| `:hollow` | `Tone.PolySynth(Synth)` (triangle) | Slow attack (2–3s) + heavy reverb + LPF |
+| `:hollow` | Triangle `PolySynth` + pink noise layer | Triangle alone is too clean; add bandpass-filtered pink noise that swells with each note for the breathy, resonant character (see pattern below) |
 | `:dark_ambience` | `Tone.Synth` (fatsawtooth, spread: 20) | Detuned saw pair + heavy LPF + reverb |
 | `:sine` | `Tone.Synth` (sine) | Direct equivalent |
-| samples (`:bd_fat` etc.) | `Tone.Player` via `sampleBank` | Use playbackRate for Sonic Pi `rate:` param |
+| samples (`:bd_fat` etc.) | `Tone.Player` via `sampleBank` | See "Sample Playback" section for full parameter mapping |
+
+## Critical: Sample Playback Parameters
+
+Sonic Pi samples have parameters that **must** be ported to Tone.js or drums will sound terrible. The three most important are `finish` (truncation), `cutoff` (filtering), and `pan` (stereo position).
+
+### `finish:` — Sample truncation
+
+Sonic Pi's `finish:` parameter plays only a fraction of the sample (0.0–1.0). **This is essential for tight percussion.** Without it, a snare plays its full waveform (~1s) instead of a crisp 0.25s hit.
+
+```javascript
+// Sonic Pi: sample :sn_dub, finish: 0.25
+// Tone.js: schedule a stop at finish fraction of sample duration
+const buf = await sampleBank.load('sn_dub');
+const p = new Tone.Player(buf);
+p.start(time);
+const finishDur = (buf.duration / p.playbackRate) * 0.25;
+Tone.Transport.scheduleOnce(() => { p.stop(); }, time + finishDur);
+```
+
+Typical `finish` values from the Sonic Pi tracks:
+| Sample | finish | Effect |
+| --- | --- | --- |
+| `sn_dub` (snare) | 0.15–0.30 | Tight dub snare hit |
+| `drum_cowbell` (rim) | 0.03–0.04 | Tiny percussive tick |
+| `drum_cymbal_closed` (hat) | 0.04–0.05 | Crisp hi-hat tick |
+
+### `cutoff:` — Sample filtering
+
+Sonic Pi's `cutoff:` applies a lowpass filter to the sample (MIDI note number, not Hz). Create dedicated `Tone.Filter` nodes and route samples through them.
+
+```javascript
+// Sonic Pi: sample :bd_fat, cutoff: 70
+// Tone.js: route through a pre-built LPF
+this.kickFilter = new Tone.Filter({
+  frequency: midiToHz(70), type: 'lowpass'
+}).connect(destination);
+// Then connect sample player → kickFilter instead of → destination
+```
+
+Typical kick `cutoff` values: 70 (main), 60 (ghost), 55 (sub ghost). Lower = darker, tighter.
+
+### `pan:` — Stereo position
+
+Use `Tone.Panner` for per-hit stereo placement. Important for hats, rim, and pad notes.
+
+```javascript
+const panner = new Tone.Panner(rrand(-0.3, 0.3)).connect(destination);
+gain.connect(panner);
+```
+
+### Standard `_playSample` helper
+
+Both mezzanine and just_vibes use a consistent `_playSample(name, time, opts)` helper that handles all these parameters. When writing new tracks, copy this pattern:
+
+```javascript
+_playSample(name, time, opts = {}) {
+  // opts: { amp, playbackRate, finish, pan, destination }
+  sampleBank.load(name).then((buf) => {
+    const p = new Tone.Player(buf);
+    if (opts.playbackRate) p.playbackRate = opts.playbackRate;
+
+    const dest = opts.destination || this.dest;
+    let tail = dest;
+    let panner = null;
+    if (opts.pan !== undefined) {
+      panner = new Tone.Panner(opts.pan).connect(tail);
+      tail = panner;
+    }
+    const gain = new Tone.Gain(opts.amp || 1).connect(tail);
+    p.connect(gain);
+
+    p.start(time);
+
+    // Truncate at finish point
+    if (opts.finish !== undefined) {
+      const finishDur = (buf.duration / (opts.playbackRate || 1)) * opts.finish;
+      Tone.Transport.scheduleOnce(() => { try { p.stop(); } catch(e) {} }, time + finishDur);
+    }
+
+    // Auto-dispose
+    const dur = opts.finish
+      ? (buf.duration / (opts.playbackRate || 1)) * opts.finish
+      : buf.duration / (opts.playbackRate || 1);
+    setTimeout(() => {
+      try { p.dispose(); gain.dispose(); if (panner) panner.dispose(); } catch(e) {}
+    }, (dur + 1.5) * 1000);
+  });
+}
+```
+
+## `:hollow` Synth Pattern
+
+Sonic Pi's `:hollow` is a band-pass filtered noise synth with resonance — not a simple oscillator. Approximate it by layering a triangle `PolySynth` with a pink noise source filtered through a bandpass that swells with each note:
+
+```javascript
+// In constructor:
+this.padSynth = new Tone.PolySynth(Tone.Synth, {
+  oscillator: { type: 'triangle' },
+  envelope: { attack: 2.5, decay: 1, sustain: 0.5, release: 5 },
+}).connect(this.padFilter);
+this.padNoiseFilter = new Tone.Filter({ frequency: midiToHz(58), type: 'bandpass', Q: 2 }).connect(this.padReverb);
+this.padNoiseGain = new Tone.Gain(0).connect(this.padNoiseFilter);
+this.padNoise = new Tone.Noise('pink').connect(this.padNoiseGain);
+
+// In start(): this.padNoise.start();
+
+// When playing a pad note, swell the noise layer:
+this.padNoiseGain.gain.setValueAtTime(0, time);
+this.padNoiseGain.gain.linearRampToValueAtTime(amp * 0.12, time + 2);
+this.padNoiseGain.gain.linearRampToValueAtTime(0, time + 5);
+```
+
+## `:pluck` Resonance Gotcha
+
+Sonic Pi's `:pluck` `coeff` parameter (0–1) controls the lowpass filter coefficient in the Karplus-Strong feedback loop. Lower values = more high-frequency damping per cycle = darker but still ringing tone. Tone.js `PluckSynth.resonance` (0–1) controls sustain length — higher = longer ring.
+
+**The mapping is not linear or inverse.** Sonic Pi `coeff: 0.1–0.2` produces a moderately damped but clearly audible pluck. Map this to `resonance: 0.88–0.95` in Tone.js. Setting `resonance: 0.1–0.2` (as a naive direct mapping would) kills the note almost instantly.
 
 ## Tone.js Patterns
 
