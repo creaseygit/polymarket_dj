@@ -18,7 +18,6 @@ class OracleTrack {
     this.volumeScale = 0.3 / 0.7;
 
     // Reverb: Sonic Pi room: 0.6, damp: 0.5
-    // Tone.js Reverb decay ≈ room * 5 = 3s; wet maps to room level
     this.reverb = new Tone.Reverb({
       decay: 3,
       wet: 0.6,
@@ -34,8 +33,7 @@ class OracleTrack {
       rolloff: -12,
     }).connect(this.reverb);
 
-    // We create individual voices per note for per-note panning.
-    // Store references for cleanup.
+    // Active voices for cleanup
     this._activeVoices = [];
 
     // Main loop: every 3 seconds, evaluate and possibly play a motif
@@ -48,7 +46,6 @@ class OracleTrack {
 
   stop() {
     this.loop.stop();
-    // Clean up any lingering voices
     this._activeVoices.forEach((v) => {
       try { v.synth.dispose(); } catch (_) {}
       try { v.panner.dispose(); } catch (_) {}
@@ -71,32 +68,40 @@ class OracleTrack {
   /**
    * Build a piano-like FM synth voice.
    *
-   * Sonic Pi :piano has `hard` (0–1, brightness/hammer hardness) and
-   * `vel` (0–1, velocity/dynamics). We approximate with FM synthesis:
-   * - A carrier with quick attack and natural decay (piano-like envelope)
-   * - Modulation index driven by `hard` (more harmonics = brighter/harder)
-   * - Velocity scales the overall amplitude
-   * - harmonicity at 2 gives a piano-ish overtone series
+   * Sonic Pi :piano is a physical modeling synth with `hard` (hammer
+   * hardness / brightness) and `vel` (velocity / dynamics).
+   *
+   * FM piano approximation (inspired by DX7 E.Piano):
+   * - Low modulationIndex (1-3) for warm tone, not metallic bells
+   * - Very fast modulation envelope — brightness dies quickly like
+   *   a real hammer strike (short mod decay = bright transient only)
+   * - Carrier envelope with natural piano-like decay curve
+   * - harmonicity: 2 (octave relationship) for clean overtones
    */
   _makeVoice(hard, vel, pan) {
     const panner = new Tone.Panner(pan).connect(this.dampFilter);
 
     const synth = new Tone.FMSynth({
       harmonicity: 2,
-      modulationIndex: 2 + hard * 10,   // hard → brighter attack
+      // hard 0.1-0.3 → modIndex 1.4-2.2 (warm piano, not metallic)
+      // Previous: 2 + hard * 10 = 3-5 (way too metallic/bell-like)
+      modulationIndex: 1 + hard * 4,
       oscillator: { type: 'sine' },
       modulation: { type: 'sine' },
       envelope: {
-        attack: 0.005,
-        decay: 0.6 + vel * 0.4,         // vel → longer sustain
-        sustain: 0.05,
-        release: 1.0,
+        attack: 0.003,
+        // vel drives sustain length: higher velocity = longer ring
+        decay: 0.5 + vel * 0.6,
+        sustain: 0.12,
+        release: 1.5,
       },
       modulationEnvelope: {
-        attack: 0.002,
-        decay: 0.15 + hard * 0.2,       // hard → longer mod = more brightness
+        // Very fast mod envelope = bright attack transient that dies quickly
+        // This is the key to piano-like FM: brightness only on the hammer strike
+        attack: 0.001,
+        decay: 0.06 + hard * 0.12,   // hard → slightly longer brightness
         sustain: 0.0,
-        release: 0.3,
+        release: 0.15,
       },
     }).connect(panner);
 
@@ -158,7 +163,7 @@ class OracleTrack {
         voice.synth.triggerAttackRelease(note, '4n', t, amp);
       }, noteTime);
 
-      // Schedule cleanup after the note fully decays (~3s is generous)
+      // Schedule cleanup after the note fully decays
       Tone.Transport.scheduleOnce(() => {
         const idx = this._activeVoices.indexOf(voice);
         if (idx !== -1) this._activeVoices.splice(idx, 1);
