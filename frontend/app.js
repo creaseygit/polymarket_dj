@@ -34,12 +34,17 @@ async function api(path) {
 async function startAudio() {
   try {
     const track = document.getElementById('track-select').value;
+    const btn = document.getElementById('audio-toggle-btn');
+    if (btn) { btn.textContent = 'Loading…'; btn.disabled = true; }
     await audioEngine.init();
     await audioEngine.selectTrack(track);
     audioRunning = true;
+    if (btn) btn.disabled = false;
     updateAudioUI();
     log('Audio started: ' + track);
   } catch (e) {
+    const btn = document.getElementById('audio-toggle-btn');
+    if (btn) btn.disabled = false;
     log('ERR: ' + e.message);
   }
 }

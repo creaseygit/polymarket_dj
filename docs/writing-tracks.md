@@ -181,7 +181,7 @@ note("c3 ~ e3 ~ g3").sound("sine")  // ~ = silence
 Piano alert track. Returns pattern only when `|price_delta| > 0.1`, otherwise `null` (silence). FM synth voices play ascending/descending motifs (2-6 notes from scale). C major when bullish, A minor when bearish. Volume very low (matching Sonic Pi `set_volume! 0.3`). From `sonic_pi/oracle.rb`.
 
 ### mezzanine.js
-Massive Attack/Teardrop-inspired ambient dub, 80 BPM. Am → Am → F → G progression (8-bar cycle). Layers: sub bass (sine), bass (sawtooth/tb303 phrases), arp (triangle with octave shifts), kick + ghost patterns (bd_fat), snare (sn_dub), hi-hat (probabilistic), rim (16-step cowbell pattern), vinyl dust, pad/dub wash (triangle + reverb), deep echo (sawtooth + delay), price drift (triangle through reverb→delay), ambient drone. Events trigger FM piano arpeggios and cymbal crashes. From `sonic_pi/mezzanine.rb`.
+Massive Attack trip-hop, 80 BPM. Am → Am → Fm → Gm progression (4-bar cycle). Half-time beat: kick on 1 and "and" of 2 (`bd:3`), snare on 3 only (`sd:1`), 8th-note hi-hats with `degradeBy` for human feel. Deep saw bass with root-fifth phrases, sub bass (sine) on roots. Pad triads (triangle + reverb), vinyl hiss. Activity-gated: open hat, ghost kicks, dub echo stab (delay/feedback), cowbell rim clicks. Tone switches between natural minor (bullish) and darker voicings (bearish). Events trigger piano arpeggios and cymbal crashes.
 
 ### just_vibes.js
 Lo-fi hip hop, 75 BPM. Bullish: Fmaj7→Em7→Dm7→Cmaj7. Bearish: Dm7→Bbmaj7→Gm7→Am7. Same sample-based drum palette as mezzanine. Price drift uses FM piano. Deep echo at random 10-14 beat intervals. From `sonic_pi/just_vibes.rb`.

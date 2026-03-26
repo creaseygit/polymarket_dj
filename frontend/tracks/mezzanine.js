@@ -1,22 +1,10 @@
 // ── Mezzanine ────────────────────────────────────────────
-// Ambient dub. Massive Attack / Teardrop vibes. 80 BPM.
-// Am(4 bars) → F(2 bars) → G(2 bars) cycle.
+// Massive Attack trip-hop. Half-time beat, deep bass. 80 BPM.
+// Am → Am → Fm → Gm feel. Dark, heavy, sparse.
 // category: 'music', label: 'Mezzanine'
 
 const mezzanineTrack = (() => {
   let lastSpikeAt = 0;
-
-  // 8-bar chord cycle via <> (one value per bar)
-  const ROOTS = "<a2 a2 a2 a2 f2 f2 g2 g2>";
-
-  // Bass phrases: root-relative intervals with @duration weights
-  const BASS = "<[a2@3 ~ e3 d3 a2@2] [~ a2@2 c3 d3@2 ~@2] [a2@2 d3 c3 ~ e3 a2 ~] [e3 d3 ~@2 a2@2 c3@2] [f2@3 ~ c3 bb2 f2@2] [~ f2@2 gs2 bb2@2 ~@2] [g2@3 ~ d3 c3 g2@2] [~ g2@2 bb2 c3@2 ~@2]>";
-
-  // Arp: broken chord, 6 notes per bar. F/G bars same for both tones.
-  const ARP_FG = "[f4 a4 c5 a4 f4 a4] [f4 a4 c5 a4 f4 a4] [g4 b4 d5 b4 g4 b4] [g4 b4 d5 b4 g4 b4]>";
-
-  // Pad: chord tones cycling, drifts against the 8-bar cycle via slow
-  const PAD = "<a3 c4 e4 g4 f3 a3 g3 b3>";
 
   return {
     name: 'mezzanine',
@@ -31,144 +19,103 @@ const mezzanineTrack = (() => {
       const v  = data.velocity || 0.1;
       const tr = data.trade_rate || 0.2;
       const t  = data.tone !== undefined ? data.tone : 1;
-      const pd = data.price_delta || 0;
 
-      // Arp changes with tone: bullish a4, bearish gs4
-      const amArp = t === 1 ? "[a4 c5 e5 c5 a4 c5]" : "[a4 c5 e5 c5 gs4 c5]";
-      const arp = "<" + amArp + " " + amArp + " " + amArp + " " + amArp + " " + ARP_FG;
+      // ── DRUMS — always on, half-time trip-hop feel ──
 
-      // ── Always-on layers ──
-      const layers = [
-        // sub bass
-        note(ROOTS).sound("sine")
-          .gain(0.12 + h * 0.04)
-          .lpf(196)
-          .attack(0.15).decay(0.4).sustain(0.7).release(0.3),
+      // Kick: beat 1 and the "and" of 2 (classic trip-hop)
+      const kick = sound("bd:3").struct("x ~ ~ ~ ~ x ~ ~")
+        .speed(0.8).gain(0.35 + h * 0.08).lpf(200);
 
-        // bass line (sawtooth)
-        note(BASS).sound("sawtooth")
-          .gain(0.08 + h * 0.04)
-          .lpf(midiToHz(48 + pr * 25)).lpq(5)
-          .decay(0.25).release(0.1),
+      // Snare: beat 3 only (half-time)
+      const snare = sound("sd:1").struct("~ ~ ~ ~ x ~ ~ ~")
+        .speed(0.95).gain(0.18 + h * 0.06)
+        .room(0.25).rsize(1.5);
 
-        // teardrop arp — degradeBy for ghost-note dropouts
-        note(arp).sound("triangle")
-          .gain(Math.max(0.04, 0.08 - h * 0.03))
-          .lpf(midiToHz(75 + pr * 15))
-          .decay(0.12).release(0.5)
-          .room(0.35).roomlp(3000)
-          .degradeBy(0.12),
+      // Hi-hat: 8th notes, degraded for human feel
+      const hat = sound("hh:2").struct("x x x x x x x x")
+        .gain(rand.range(0.04, 0.09))
+        .speed(rand.range(1.3, 1.7))
+        .hpf(6000).end(0.04)
+        .degradeBy(0.3);
 
-        // kick on 1 & 3
-        sound("bd").struct("x ~ x ~")
-          .speed(0.85).end(0.35).lpf(370)
-          .gain(0.12 + h * 0.06),
+      // ── BASS — the backbone ──
+      // Simple dark bass phrase, root-fifth movement
+      const bassNotes = t === 1
+        ? "<[a1 ~ ~ a1 ~ e2 ~ d2] [a1 ~ ~ a1 ~ c2 ~ e2] [f1 ~ ~ f1 ~ c2 ~ bb1] [g1 ~ ~ g1 ~ d2 ~ b1]>"
+        : "<[a1 ~ ~ a1 ~ e2 ~ d2] [a1 ~ ~ a1 ~ c2 ~ eb2] [f1 ~ ~ f1 ~ c2 ~ ab1] [g1 ~ ~ g1 ~ d2 ~ bb1]>";
 
-        // snare on 3
-        sound("sd").struct("~ ~ x ~")
-          .speed(0.9).end(0.25)
-          .gain(0.08 + h * 0.04)
-          .room(0.3),
+      const bass = note(bassNotes).sound("sawtooth")
+        .gain(0.14 + h * 0.06)
+        .lpf(midiToHz(36 + pr * 24)).lpq(4)
+        .decay(0.2).release(0.15);
 
-        // vinyl dust — clipped pink noise
+      // Sub bass: just the roots, pure sine
+      const sub = note("<a1 a1 f1 g1>").sound("sine")
+        .gain(0.18 + h * 0.05)
+        .lpf(120)
+        .attack(0.05).decay(0.3).sustain(0.8).release(0.2);
+
+      const layers = [kick, snare, hat, bass, sub];
+
+      // ── TEXTURE — data-driven atmosphere ──
+
+      // Pad: slow chords, always present but quiet
+      const padNotes = t === 1
+        ? "<[a3,c4,e4] [a3,c4,e4] [f3,a3,c4] [g3,b3,d4]>"
+        : "<[a3,c4,eb4] [a3,c4,eb4] [f3,ab3,c4] [g3,bb3,d4]>";
+      layers.push(
+        note(padNotes).sound("triangle")
+          .gain(0.06 + h * 0.03)
+          .lpf(midiToHz(52 + pr * 18))
+          .attack(1.0).decay(0.5).release(1.5)
+          .room(0.35).rsize(2)
+      );
+
+      // Vinyl hiss — constant texture
+      layers.push(
         sound("pink").slow(2)
-          .end(0.5).gain(0.06),
+          .end(0.5).gain(0.04).hpf(3000)
+      );
 
-        // dub wash pad — slow(1.5) drifts against the 8-bar cycle
-        note(PAD).sound("triangle")
-          .gain(Math.max(0.05, 0.10 - h * 0.04))
-          .lpf(midiToHz(55 + pr * 20))
-          .attack(1.5).decay(0.5).release(1.0)
-          .room(0.4).slow(1.5),
-      ];
+      // ── Activity-gated layers ──
 
-      // ── Activity-gated layers (market data drives structure) ──
-
-      // ghost kick on beat 2
-      if (tr > 0.4) {
-        layers.push(
-          sound("bd").struct("~ x ~ ~")
-            .speed(0.8).end(0.25).lpf(250)
-            .gain(0.06)
-        );
-      }
-
-      // ghost kick 8th-note pattern
+      // Open hat on beat 4 when active
       if (tr > 0.3) {
         layers.push(
-          sound("bd").struct("~ ~ x ~ ~ x ~ ~")
-            .speed(0.75).end(0.2).lpf(196)
-            .gain(0.05 + h * 0.03)
+          sound("hh:8").struct("~ ~ ~ ~ ~ ~ x ~")
+            .gain(0.06 + tr * 0.04)
+            .speed(0.8).end(0.12)
+            .room(0.2)
         );
       }
 
-      // ghost snare — 40% play chance via degradeBy
+      // Ghost kick shuffle when busy
       if (tr > 0.5) {
         layers.push(
-          sound("sd").struct("~ ~ ~ x").slow(2)
-            .speed(1.0).end(0.15).gain(0.05)
-            .room(0.3).degradeBy(0.6)
+          sound("bd:1").struct("~ ~ x ~ ~ ~ ~ x")
+            .speed(0.7).gain(0.06).lpf(150)
         );
       }
 
-      // rim tick — cowbell as subtle tick
+      // Dub echo stab — velocity-gated
+      if (v > 0.3) {
+        const echoNote = t === 1 ? "<e4 ~ c4 ~>" : "<eb4 ~ c4 ~>";
+        layers.push(
+          note(echoNote).sound("triangle")
+            .gain(0.05 + v * 0.05)
+            .lpf(midiToHz(60)).attack(0.01).decay(0.15).release(0.6)
+            .delay(0.4).delaytime(0.375).delayfeedback(0.35)
+            .room(0.3)
+        );
+      }
+
+      // Rim/click pattern at moderate activity
       if (tr > 0.25) {
         layers.push(
-          sound("cb").struct("~ ~ ~ x ~ ~ x ~ ~ ~ x ~ ~ x ~ ~")
-            .speed(2.5).end(0.04)
-            .gain(0.05 + h * 0.03)
-            .pan(sine.range(0.35, 0.65).slow(4))
-        );
-      }
-
-      // hi-hat — sparse, probabilistic
-      if (tr > 0.15) {
-        layers.push(
-          sound("hh")
-            .gain(rand.range(0.06, 0.12))
-            .speed(rand.range(1.2, 1.8))
-            .end(0.04).hpf(4200)
-            .pan(rand.range(0.1, 0.9))
-            .fast(tr > 0.6 ? 4 : 2)
-            .degradeBy(0.65 - tr * 0.35)
-        );
-      }
-
-      // deep echo — velocity-gated ambient layer
-      if (v > 0.3) {
-        const deepNotes = t === 1 ? "<a3 c4 e4>" : "<a3 c4 gs3>";
-        layers.push(
-          note(deepNotes).sound("sawtooth")
-            .gain(0.06 + v * 0.06)
-            .lpf(370).attack(0.5).decay(0.8).release(1.5)
-            .delay(0.4).delaytime(0.5).delayfeedback(0.25)
-            .room(0.3).slow(2.5)
-        );
-      }
-
-      // price drift — pentatonic run on big moves
-      const mag = Math.abs(pd);
-      if (mag > 0.2) {
-        const sc = getScaleNotes("A4", "minor_pentatonic", 14, 2);
-        const num = Math.min(6, Math.max(2, 2 + Math.floor(mag * 6)));
-        const driftNotes = pd > 0 ? sc.slice(0, num) : sc.slice(0, num).reverse();
-        layers.push(
-          note(driftNotes.map(n => noteToStrudel(n)).join(" "))
-            .sound("triangle")
-            .gain(Math.min(0.15, 0.08 + mag * 0.10))
-            .decay(0.15).release(0.8)
-            .delay(0.3).delaytime(0.4).delayfeedback(0.2)
-            .room(0.4)
-        );
-      }
-
-      // ambient drone (server-toggled)
-      if (data.ambient_mode === 1) {
-        layers.push(
-          note("<a2 e3 a3>").sound("sawtooth")
-            .gain(0.1).lpf(250)
-            .attack(2).decay(1).release(2)
-            .room(0.5).slow(2)
+          sound("cb").struct("~ ~ ~ x ~ ~ ~ ~ ~ ~ x ~ ~ ~ ~ ~")
+            .speed(2.5).end(0.03)
+            .gain(0.04 + h * 0.02)
+            .pan(sine.range(0.3, 0.7).slow(3))
         );
       }
 
@@ -176,35 +123,35 @@ const mezzanineTrack = (() => {
     },
 
     onEvent(type, msg, data) {
-      const t   = data.tone !== undefined ? data.tone : 1;
+      const t = data.tone !== undefined ? data.tone : 1;
       const mag = Math.abs(data.price_delta || 0);
 
       if (type === "spike") {
         const now = Date.now();
         if (now - lastSpikeAt < 15000) return null;
         lastSpikeAt = now;
-        return sound("hh")
-          .speed(0.6).end(0.15).gain(0.12).room(0.3);
+        return sound("hh:6")
+          .speed(0.5).end(0.2).gain(0.1).room(0.4);
       }
 
       if (type === "price_move") {
-        const sc  = getScaleNotes("A4", "minor", 14, 2);
-        const num = Math.min(7, Math.max(3, 3 + Math.floor(mag * 7)));
-        const ns  = msg.direction > 0 ? sc.slice(0, num) : sc.slice(0, num).reverse();
+        const sc = getScaleNotes("A4", "minor", 14, 2);
+        const num = Math.min(5, Math.max(2, 2 + Math.floor(mag * 5)));
+        const ns = msg.direction > 0 ? sc.slice(0, num) : sc.slice(0, num).reverse();
         return note(ns.map(n => noteToStrudel(n)).join(" "))
           .sound("piano").end(1.5)
-          .gain(Math.min(0.15, 0.08 + mag * 0.10))
-          .delay(0.3).delaytime(0.5).delayfeedback(0.2)
-          .room(0.4);
+          .gain(Math.min(0.12, 0.06 + mag * 0.08))
+          .delay(0.3).delaytime(0.375).delayfeedback(0.25)
+          .room(0.35);
       }
 
       if (type === "resolved") {
-        const r  = msg.result || 1;
+        const r = msg.result || 1;
         const sc = r === 1
-          ? getScaleNotes("A4", "major", 8, 1)
-          : getScaleNotes("A4", "minor", 8, 1).reverse();
+          ? getScaleNotes("A4", "major", 6, 1)
+          : getScaleNotes("A4", "minor", 6, 1).reverse();
         return note(sc.map(n => noteToStrudel(n)).join(" "))
-          .sound("piano").end(1.5).gain(0.12)
+          .sound("piano").end(1.5).gain(0.1)
           .delay(0.3).delaytime(0.4).delayfeedback(0.2)
           .room(0.4);
       }

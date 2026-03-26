@@ -22,6 +22,25 @@ const audioEngine = (() => {
         samples('github:tidalcycles/dirt-samples'),
       ]),
     });
+
+    // Warm up sample buffers — Dirt-Samples index loads during prebake but
+    // the actual .wav files are fetched lazily on first trigger.  Play a
+    // short silent pattern that touches every drum sound we use so the
+    // browser fetches and decodes them before the user hears anything.
+    try {
+      stack(
+        sound("bd:0 bd:1 bd:3"),
+        sound("sd:0 sd:1"),
+        sound("hh:0 hh:2 hh:6 hh:8"),
+        sound("cb:0"),
+      ).gain(0).play();
+      await new Promise(r => setTimeout(r, 2000));
+      hush();
+      console.log('[Audio] Sample warmup complete');
+    } catch (e) {
+      console.warn('[Audio] Sample warmup error (non-fatal):', e);
+    }
+
     initialized = true;
     console.log('[Audio] Strudel initialized');
   }
