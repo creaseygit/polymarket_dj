@@ -97,7 +97,7 @@ Polymarket has auto-generated rolling markets for BTC/ETH price movement with fi
 2. **Hourly date-based:** `LIVE_HOURLY_PATTERNS` defines patterns: `bitcoin-up-or-down`. Slugs use ET date+hour (e.g. `bitcoin-up-or-down-march-25-2026-3am-et`, `bitcoin-up-or-down-march-25-2026-1pm-et`). Built by `_hourly_slug()` using 12-hour format with am/pm suffix
 3. `fetch_live_finance_markets()` computes the current window boundary from the system clock and tries current + next window slugs for both pattern types
 4. Hourly slugs use `_now_et()` which calculates US Eastern time with DST (no `tzdata` dependency — uses manual DST calculation for Windows compatibility)
-5. The "BTC Live" browse tab (`tag_id: "live"`) calls this function. Results are never cached client-side since they rotate
+5. The "Crypto Live" browse tab (`tag_id: "live"`) calls this function. Results are never cached client-side since they rotate
 6. Users can also paste hourly URLs directly (e.g. `https://polymarket.com/event/bitcoin-up-or-down-march-25-2026-1am-et`) — auto-rotation works the same way
 
 ### Auto-Rotation
@@ -239,7 +239,7 @@ The UI has four sections:
 1. **Audio** — Start/Stop, track selector, volume control, test sounds, Kill All, link to Track Sandbox
 2. **Now Playing** — Current market question, bullish/bearish + price %, raw data values (heat, velocity, trade rate, spread), link to Polymarket
 3. **Feed** — WebSocket connection status
-4. **Markets** — URL paste input, "Your Markets" (session list), Browse tabs (Trending, BTC Live, Politics, Sports, Crypto, Finance, Culture, Geopolitics, Tech, Closing Soon)
+4. **Markets** — URL paste input, "Your Markets" (session list), Browse tabs (Trending, Crypto Live, Politics, Sports, Crypto, Finance, Culture, Geopolitics, Tech, Closing Soon)
 
 ### Track Sandbox (localhost:8888/sandbox)
 
@@ -253,7 +253,7 @@ A development tool for testing tracks without live market data:
 
 ### Browse Tabs
 
-Each tab fetches 10 markets from the Gamma API filtered by `tag_id` (defined in `BROWSE_CATEGORIES` in config.py). Results are cached client-side per tab (except "BTC Live" which always fetches fresh). "Trending" = all markets sorted by volume. "Closing Soon" = sorted by end_date ascending. "BTC Live" = calls `fetch_live_finance_markets()` to find current rolling BTC/ETH windows. Clicking "Play" on a browse result fetches the market via `/api/play-url`, injects it into the DJ, and adds it to "Your Markets".
+Each tab fetches 10 markets from the Gamma API filtered by `tag_id` (defined in `BROWSE_CATEGORIES` in config.py). Results are cached client-side per tab (except "Crypto Live" which always fetches fresh). "Trending" = all markets sorted by volume. "Closing Soon" = sorted by end_date ascending. "Crypto Live" = calls `fetch_live_finance_markets()` to find current rolling BTC/ETH windows. Clicking "Play" on a browse result fetches the market via `/api/play-url`, injects it into the DJ, and adds it to "Your Markets".
 
 ### Your Markets
 
