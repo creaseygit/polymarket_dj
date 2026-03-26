@@ -65,15 +65,25 @@ function applyHashOnce() {
     }
   }
 
-  // Auto-play the market from the URL hash
+  // Pin the market so data starts flowing and UI populates
   if (params.live) {
-    if (!audioRunning) startAudio();
     wsClient.send({ action: 'play_live', prefix: params.live });
     log('Loading live market: ' + params.live);
   } else if (params.market) {
-    if (!audioRunning) startAudio();
     wsClient.send({ action: 'pin', slug: params.market });
     log('Loading market from URL: ' + params.market);
+  }
+
+  // Auto-start audio on first user interaction (browsers block autoplay without gesture)
+  if (params.market || params.live) {
+    const autoStart = () => {
+      document.removeEventListener('click', autoStart);
+      document.removeEventListener('keydown', autoStart);
+      if (!audioRunning) startAudio();
+    };
+    document.addEventListener('click', autoStart, { once: false });
+    document.addEventListener('keydown', autoStart, { once: false });
+    log('Click anywhere to start audio.');
   }
 }
 
