@@ -17,7 +17,10 @@ const audioEngine = (() => {
   async function init() {
     if (initialized) return;
     await initStrudel({
-      prebake: () => samples('https://strudel.b-cdn.net/piano.json', 'https://strudel.b-cdn.net/piano/', { prebake: true }),
+      prebake: () => Promise.all([
+        samples('https://strudel.b-cdn.net/piano.json', 'https://strudel.b-cdn.net/piano/', { prebake: true }),
+        samples('github:tidalcycles/dirt-samples'),
+      ]),
     });
     initialized = true;
     console.log('[Audio] Strudel initialized');
