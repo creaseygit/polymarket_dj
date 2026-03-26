@@ -77,3 +77,4 @@ For deeper context, read the relevant doc below. **Only load what you need for t
 | [`docs/web-ui-and-api.md`](docs/web-ui-and-api.md) | UI sections, WebSocket protocol, API endpoints, background loops, deployment | Modifying the web UI, WebSocket protocol, API endpoints, or deployment config |
 | [`docs/gotchas.md`](docs/gotchas.md) | Known issues: Polymarket API, browse/config, legacy code | Hit a weird bug, need to understand non-obvious constraints |
 | [`docs/sonic-pi-integration.md`](docs/sonic-pi-integration.md) | Legacy Sonic Pi headless launcher (local dev only, not deployed) | Working with Sonic Pi locally for track prototyping |
+| [`docs/deployment.md`](docs/deployment.md) | Lightsail/Nginx/CloudFlare setup, deploy commands, systemd service, first-time provisioning | Deploying changes, server ops, infrastructure questions |
