@@ -202,7 +202,7 @@ function updateAudioUI() {
   const track = document.getElementById('track-select').value;
   document.getElementById('audio-label').textContent = audioRunning ? 'Playing: ' + track : 'Stopped';
 
-  if (hasMarket) {
+  if (hasMarket || audioRunning) {
     prompt.style.display = 'none';
     grid.style.display = '';
     btn.textContent = audioRunning ? 'Stop' : 'Play';
