@@ -66,12 +66,12 @@ Each tab fetches 10 markets from the Gamma API filtered by `tag_id` (defined in 
 
 ## Deployment
 
-- **EC2 t3.micro** in us-east-1 (eliminates VPN requirement)
+- **Lightsail** $5/mo plan (1GB RAM, 1 vCPU) in us-east-1 (eliminates VPN requirement, includes 2TB data transfer)
 - **Nginx** reverse proxy: serves `frontend/` as static files, proxies `/ws` (with WebSocket upgrade) and `/api/*` to Python on port 8888
 - **CloudFlare** for DNS, CDN (caches static assets), HTTPS (Full strict), WebSocket support
 - **systemd** service with auto-restart
 - Server sends WebSocket ping every 30s (CloudFlare has 100s idle timeout)
-- Config files in `deploy/`: `nginx.conf`, `polymarket-dj.service`, `setup-ec2.sh`
+- Config files in `deploy/`: `nginx.conf`, `polymarket-dj.service`, `setup.sh`
 
 ## Console Log Tags
 

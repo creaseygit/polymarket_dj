@@ -1,6 +1,6 @@
 #!/bin/bash
-# EC2 provisioning script for The Polymarket DJ
-# Run on a fresh Ubuntu 24.04 LTS instance in us-east-1
+# Provisioning script for The Polymarket DJ
+# Run on a fresh Ubuntu instance (Lightsail or EC2) in us-east-1
 set -euo pipefail
 
 echo "=== Installing system packages ==="
@@ -31,6 +31,10 @@ sudo systemctl enable polymarket-dj
 sudo systemctl start polymarket-dj
 
 echo "=== Done ==="
-echo "Server running at http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):80"
 echo "Check status: sudo systemctl status polymarket-dj"
 echo "View logs: sudo journalctl -u polymarket-dj -f"
+echo ""
+echo "Next steps:"
+echo "  1. Point your domain to this instance's public IP in CloudFlare"
+echo "  2. Update server_name in /etc/nginx/sites-available/polymarket-dj"
+echo "  3. Ensure Lightsail firewall allows ports 80 and 443"

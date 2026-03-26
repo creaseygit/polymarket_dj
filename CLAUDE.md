@@ -19,7 +19,7 @@ python server.py
 ```
 
 **Local dev requirements:** VPN required (user is in UAE, Polymarket blocks non-US traffic).
-**Deployed:** AWS EC2 in us-east-1 (no VPN needed) + CloudFlare (DNS/CDN/HTTPS).
+**Deployed:** AWS Lightsail in us-east-1 (no VPN needed) + CloudFlare (DNS/CDN/HTTPS).
 
 ## Architecture
 
@@ -63,7 +63,7 @@ CloudFlare → Nginx → Python aiohttp (data only) ←→ Polymarket APIs
 - websockets (Polymarket CLOB feed)
 - requests (Gamma REST API)
 - Tone.js (browser audio synthesis — MIT license)
-- AWS EC2 t3.micro (us-east-1) + Nginx + CloudFlare
+- AWS Lightsail (us-east-1, $5/mo 1GB plan) + Nginx + CloudFlare
 
 ## Detailed Documentation Index
 
