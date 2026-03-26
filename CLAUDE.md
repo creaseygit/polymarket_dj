@@ -15,7 +15,7 @@ cd C:\Github\polymarket_dj
 python server.py
 # Open http://localhost:8888
 # Pick a market from browse tabs or paste a Polymarket URL
-# Click Start to begin audio (runs in browser via Tone.js)
+# Audio auto-starts on market selection (Play/Stop toggle in Audio panel)
 ```
 
 **Local dev requirements:** VPN required (user is in UAE, Polymarket blocks non-US traffic).
