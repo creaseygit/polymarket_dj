@@ -279,6 +279,9 @@ async def handle_start_audio(request):
     if state.audio_running:
         return web.json_response({"error": "Audio already running"}, status=400)
 
+    # Re-discover tracks from disk so new/edited .rb files are picked up
+    state.tracks = state._find_tracks()
+
     data = await request.json() if request.content_length else {}
     track_name = data.get("track", "midnight_ticker")
 
@@ -358,7 +361,9 @@ set :tone, 1
 
 
 async def handle_stop_audio(request):
-    """Stop Sonic Pi."""
+    """Stop Sonic Pi and kill all orphan processes."""
+    import subprocess as sp
+
     if not state.audio_running:
         return web.json_response({"error": "Audio not running"}, status=400)
 
@@ -372,6 +377,14 @@ async def handle_stop_audio(request):
         await state.sonic.shutdown()
         state.sonic = None
 
+    # Kill any orphaned scsynth/ruby processes
+    for proc_name in ["scsynth.exe", "ruby.exe"]:
+        try:
+            sp.run(["taskkill", "/F", "/IM", proc_name],
+                   capture_output=True, text=True)
+        except Exception:
+            pass
+
     state.audio_running = False
     state.sandbox_mode = False
     state.current_track = None
@@ -380,6 +393,9 @@ async def handle_stop_audio(request):
 
 async def handle_change_track(request):
     """Switch to a different track."""
+    # Re-discover tracks from disk so new/edited .rb files are picked up
+    state.tracks = state._find_tracks()
+
     data = await request.json()
     track_name = data.get("track")
 
