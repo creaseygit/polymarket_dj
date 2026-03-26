@@ -42,6 +42,8 @@ function updateHash() {
   }
   const track = document.getElementById('track-select');
   if (track && track.value) parts.push('track=' + encodeURIComponent(track.value));
+  // Persist active browse tab so shared links show the right category
+  if (activeTab) parts.push('tab=' + encodeURIComponent(activeTab));
   const newHash = parts.length ? '#' + parts.join('&') : '';
   if ('#' + location.hash.slice(1) !== newHash) {
     history.replaceState(null, '', newHash || location.pathname + location.search);
@@ -210,8 +212,19 @@ function initBrowse(categories) {
     const sort = c.sort || 'volume';
     return '<button class="browse-tab" data-tag="' + tid + '" data-sort="' + sort + '" onclick="browseTab(this)">' + c.label + '</button>';
   }).join('');
-  const first = tabs.querySelector('.browse-tab');
-  if (first) browseTab(first);
+
+  // Select the tab from the URL hash, or "live" for live links, or first tab
+  const params = getHashParams();
+  let target = null;
+  if (params.tab) {
+    const [tag, sort] = params.tab.split(':');
+    target = tabs.querySelector('.browse-tab[data-tag="' + tag + '"][data-sort="' + (sort || 'volume') + '"]');
+  }
+  if (!target && params.live) {
+    target = tabs.querySelector('.browse-tab[data-tag="live"]');
+  }
+  if (!target) target = tabs.querySelector('.browse-tab');
+  if (target) browseTab(target);
 }
 
 async function browseTab(btn) {
