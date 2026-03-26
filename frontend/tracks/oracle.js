@@ -8,14 +8,24 @@ const oracleTrack = {
   label: 'Oracle',
   category: 'alert',
 
-  init() {},
+  _cachedPattern: null,
+  _cachedKey: null,
+
+  init() {
+    this._cachedPattern = null;
+    this._cachedKey = null;
+  },
 
   pattern(data) {
     const pd = data.price_delta || 0;
     const mag = Math.abs(pd);
 
     // No significant movement → silence
-    if (mag <= 0.1) return null;
+    if (mag <= 0.1) {
+      this._cachedPattern = null;
+      this._cachedKey = null;
+      return null;
+    }
 
     // Scale: C major (bullish) or A minor (bearish)
     const t = data.tone !== undefined ? data.tone : 1;
@@ -23,6 +33,16 @@ const oracleTrack = {
 
     // 2-5 chords based on magnitude
     const num = Math.min(5, Math.max(2, 2 + Math.floor(mag * 5)));
+
+    // Direction: positive = ascending, negative = descending
+    const dir = pd > 0 ? 'up' : 'down';
+
+    // Reuse cached pattern if direction, note count, and scale haven't changed.
+    // This avoids mid-cycle pattern replacement that can swallow notes.
+    const key = `${dir}:${num}:${scaleName}`;
+    if (this._cachedPattern && this._cachedKey === key) {
+      return this._cachedPattern;
+    }
 
     // Scale degrees: ascending for up, descending for down
     const degrees = [];
@@ -43,7 +63,7 @@ const oracleTrack = {
     const vol = Math.min(0.05, Math.max(0.02, 0.02 + mag * 0.06)) * activity;
 
     // mini() converts string to Pattern, then off() adds chord voicing before scale mapping
-    return mini(pat)
+    const result = mini(pat)
       .off(1/8, add("2,4"))
       .n().scale(scaleName)
       .sound("piano")
@@ -52,6 +72,10 @@ const oracleTrack = {
       .room(rand.range(0.4, 0.7))
       .clip(2)
       .cpm(20);
+
+    this._cachedPattern = result;
+    this._cachedKey = key;
+    return result;
   },
 
   onEvent() { return null; },
