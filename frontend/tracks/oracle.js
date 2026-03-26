@@ -1,7 +1,6 @@
 // ── Oracle Track (Strudel) ───────────────────────────────
 // Alert track. Silence when market is calm.
 // Piano scale runs when price moves — length and direction match the move.
-// Ported from sonic_pi/oracle.rb.
 // category: 'alert', label: 'Oracle'
 
 const oracleTrack = {
@@ -35,7 +34,7 @@ const oracleTrack = {
     const vol = Math.min(0.05, Math.max(0.02, 0.02 + mag * 0.06)) * activity;
 
     // Notes + rest padding = 10 elements.
-    // At cpm(20) → 3s cycle → 0.3s per element (matches Sonic Pi sleep 0.3).
+    // At cpm(20) → 3s cycle → 0.3s per element.
     const rests = Array(Math.max(1, 10 - num)).fill('~');
     const pat = [...notes.map(n => noteToStrudel(n)), ...rests].join(' ');
 

@@ -4,10 +4,9 @@
 - **VPN required for local dev** — Polymarket blocks UAE/non-US IPs at the TLS level. Deployed EC2 in us-east-1 doesn't need VPN
 - **No `tzdata` on Windows** — `zoneinfo` module requires `tzdata` package on Windows. Live finance hourly slugs use `_now_et()` which calculates ET offset manually with DST approximation instead
 
-## Tone.js / Browser Audio
-- **User gesture required** — Browsers require a user interaction (click) before starting Web Audio. The Start button handles this via `Tone.start()`
-- **Tone.Transport is global** — When switching tracks, must stop Transport and cancel all scheduled events before starting the new track. Tracks call `Tone.Transport.stop()` and `Tone.Transport.cancel()` in their `stop()` method
-- **Dispose synths on stop** — Tone.js nodes leak memory if not disposed. Every track must `.dispose()` all synths, effects, and loops in `stop()`
+## Strudel / Browser Audio
+- **User gesture required** — Browsers require a user interaction (click) before starting Web Audio
+- **Piano samples load from CDN** — The VCSL Salamander piano loads from GitHub on first init. Requires network access; browser caches after first load
 
 ## Polymarket API
 - **`clobTokenIds`** from Gamma API is a JSON string, not a list — parsed by `_parse_clob_token_ids()` in `gamma.py`
@@ -27,6 +26,3 @@
 - **Browse tab tag_ids** — Hardcoded in `BROWSE_CATEGORIES` in config.py. If Polymarket changes their tag IDs, these need updating
 - **Live rotation timing** — The DJ checks for expired live markets every 30s (`RESCORE_INTERVAL`). WebSocket resolution events trigger immediate rotation when available
 
-## Legacy / Deprecated
-- **console.py and main.py are stale** — Import old OSC/Sonic Pi modules. Legacy files, not used by the web server
-- **mixer/state.py and mixer/transitions.py are deprecated** — Leftover from earlier multi-layer architecture, not used

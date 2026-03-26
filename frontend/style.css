@@ -80,10 +80,10 @@ input[type="range"]::-moz-range-thumb {
 .np-mood.bullish { color: #00ff88; }
 .np-mood.bearish { color: #ff6644; }
 
-.osc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
-.osc-cell { background: #0a0a12; padding: 8px; border-radius: 4px; text-align: center; }
-.osc-cell .lbl { font-size: 10px; color: #555; text-transform: uppercase; }
-.osc-cell .val { font-size: 18px; color: #00aaff; }
+.data-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.data-cell { background: #0a0a12; padding: 8px; border-radius: 4px; text-align: center; }
+.data-cell .lbl { font-size: 10px; color: #555; text-transform: uppercase; }
+.data-cell .val { font-size: 18px; color: #00aaff; }
 
 .url-row { display: flex; gap: 8px; margin-bottom: 12px; }
 .url-row input {

@@ -215,10 +215,6 @@ function updateAudioUI() {
 }
 
 function onWsStatus(data) {
-  // Pass sample names to audio engine for Strudel sample map
-  if (data.samples && data.samples.length > 0) {
-    audioEngine.setSampleNames(data.samples);
-  }
   // Populate track selector
   const sel = document.getElementById('track-select');
   if (sel.options.length === 0 && data.tracks) {
@@ -257,10 +253,10 @@ function onWsMarketData(data) {
   mood.textContent = toneStr.toUpperCase() + '  ' + pct + '%';
   mood.className = 'np-mood ' + toneStr;
 
-  document.getElementById('np-osc').innerHTML = [
+  document.getElementById('np-data').innerHTML = [
     ['HEAT', data.heat], ['PRICE', data.price], ['VELOCITY', data.velocity],
     ['TRADE RATE', data.trade_rate], ['SPREAD', data.spread], ['TONE', data.tone ? 'MAJ' : 'MIN']
-  ].map(([l, v]) => '<div class="osc-cell"><div class="lbl">' + l + '</div><div class="val">' + v + '</div></div>').join('');
+  ].map(([l, v]) => '<div class="data-cell"><div class="lbl">' + l + '</div><div class="val">' + v + '</div></div>').join('');
 
   // Feed data to audio engine
   if (audioRunning) {

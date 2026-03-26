@@ -10,24 +10,14 @@ const audioEngine = (() => {
   let currentTrackName = null;
   let masterVolume = 0.7;
   let latestData = {};
-  let sampleNames = [];  // populated from server status message
 
   // Track registry — populated by track files calling audioEngine.registerTrack()
   const trackRegistry = {};
 
   async function init() {
     if (initialized) return;
-    // Build sample map from server-provided sample names
-    const sampleMap = {};
-    for (const name of sampleNames) {
-      sampleMap[name] = [name + '.ogg'];
-    }
     await initStrudel({
-      prebake: () => Promise.all([
-        samples(sampleMap, '/static/samples/'),
-        // Load Strudel's default piano soundfont (used by oracle, just_vibes, mezzanine)
-        samples('github:sgossner/VCSL/master/piano/salamander', { tag: 'piano' }),
-      ]),
+      prebake: () => samples('github:sgossner/VCSL/master/piano/salamander', { tag: 'piano' }),
     });
     initialized = true;
     console.log('[Audio] Strudel initialized');
@@ -141,13 +131,9 @@ const audioEngine = (() => {
     trackRegistry[name] = trackDef;
   }
 
-  function setSampleNames(names) {
-    sampleNames = names;
-  }
-
   return {
     init, selectTrack, stop, setVolume, onMarketData,
-    handleEvent, registerTrack, setSampleNames,
+    handleEvent, registerTrack,
   };
 })();
 

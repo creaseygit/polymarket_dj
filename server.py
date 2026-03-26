@@ -3,7 +3,7 @@ The Polymarket DJ — Web Server
 
 Data-only server: connects to Polymarket, scores markets, and pushes
 normalized data to browser clients via WebSocket. Audio runs entirely
-in the browser via Tone.js.
+in the browser via Strudel.
 
     python server.py
     # Open http://localhost:8888
@@ -47,9 +47,6 @@ class AppState:
         # Track metadata (read from frontend/tracks/)
         self.tracks = self._find_tracks()
 
-        # Sample names (for Strudel sample map)
-        self.sample_names = self._find_samples()
-
         # Background tasks
         self._feed_task = None
         self._dj_task = None
@@ -73,14 +70,6 @@ class AppState:
         except Exception:
             pass
         return meta
-
-    @staticmethod
-    def _find_samples():
-        """Find all .ogg sample files in frontend/samples/."""
-        samples_dir = Path("frontend/samples")
-        if not samples_dir.exists():
-            return []
-        return sorted(f.stem for f in samples_dir.glob("*.ogg"))
 
     def _find_tracks(self):
         """Find all .js track files in frontend/tracks/."""
@@ -529,7 +518,6 @@ async def handle_ws(request):
                 for name, info in state.tracks.items()
             ],
             "categories": BROWSE_CATEGORIES,
-            "samples": state.sample_names,
         }
     })
 
