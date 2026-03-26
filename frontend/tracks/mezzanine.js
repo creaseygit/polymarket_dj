@@ -17,10 +17,6 @@ class MezzanineTrack {
     this.disposed = false;
     this.samplesReady = false;
 
-    // Sample pools: each name -> array of Tone.Player (pooled for overlapping hits)
-    this.samplePlayers = {};
-    this._poolSize = 4;
-
     // Preload all required samples
     const sampleNames = [
       'bd_fat', 'sn_dub', 'drum_cymbal_closed',
@@ -29,7 +25,6 @@ class MezzanineTrack {
     sampleBank.preload(sampleNames).then(() => {
       if (this.disposed) return;
       this.samplesReady = true;
-      this._buildSamplePools(sampleNames);
     });
 
     // ── Sub bass (sine + LPF cutoff 55 = midiToHz(55)) ──
@@ -61,7 +56,8 @@ class MezzanineTrack {
       frequency: midiToHz(75), type: 'lowpass',
     }).connect(this.arpReverb);
     this.arpSynth = new Tone.PluckSynth({
-      resonance: 0.85, release: 1.5,
+      resonance: 0.92,    // high resonance = long ring, matching Sonic Pi coeff 0.1-0.2
+      release: 1.5,
     }).connect(this.arpFilter);
 
     // ── Snare reverb chain ──
@@ -73,25 +69,44 @@ class MezzanineTrack {
       frequency: midiToHz(110), type: 'highpass',
     }).connect(destination);
 
-    // ── Pad / dub wash (hollow synth: triangle + slow attack + reverb(0.95) + LPF) ──
+    // ── Kick LPF chains (Sonic Pi cutoff on samples) ──
+    this.kickFilter = new Tone.Filter({
+      frequency: midiToHz(70), type: 'lowpass',
+    }).connect(destination);
+    this.kickGhostFilter = new Tone.Filter({
+      frequency: midiToHz(60), type: 'lowpass',
+    }).connect(destination);
+    this.kickPatternFilter = new Tone.Filter({
+      frequency: midiToHz(55), type: 'lowpass',
+    }).connect(destination);
+
+    // ── Pad / dub wash ──
+    // Sonic Pi :hollow is a band-pass filtered noise synth with resonance.
+    // Approximate with filtered noise layered with a quiet triangle for pitch.
     this.padReverb = new Tone.Reverb({ decay: 6, wet: 0.75 }).connect(destination);
     this.padFilter = new Tone.Filter({
       frequency: midiToHz(55), type: 'lowpass',
     }).connect(this.padReverb);
+    // Use a softer oscillator blend for hollow-like breathiness
     this.padSynth = new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: 'triangle' },
       envelope: { attack: 3, decay: 1, sustain: 0.6, release: 5 },
     }).connect(this.padFilter);
+    // Noise layer for breathy :hollow character
+    this.padNoiseFilter = new Tone.Filter({
+      frequency: midiToHz(55), type: 'bandpass', Q: 2,
+    }).connect(this.padReverb);
+    this.padNoiseGain = new Tone.Gain(0).connect(this.padNoiseFilter);
+    this.padNoise = new Tone.Noise('pink').connect(this.padNoiseGain);
 
     // ── Deep echo (dark_ambience: detuned saw pair + heavy LPF + reverb) ──
-    // Chain: synth -> delay(echo phase:0.75, decay:6) -> lpf(70) -> reverb -> out
+    this.deepReverb = new Tone.Reverb({ decay: 4, wet: 0.5 }).connect(destination);
     this.deepFilter = new Tone.Filter({
       frequency: midiToHz(70), type: 'lowpass',
-    }).connect(destination);
+    }).connect(this.deepReverb);
     this.deepDelay = new Tone.FeedbackDelay({
       delayTime: 0.75, feedback: 0.5, wet: 0.6,
     }).connect(this.deepFilter);
-    // Detuned saw pair for dark_ambience
     this.deepSynth = new Tone.Synth({
       oscillator: { type: 'fatsawtooth', spread: 20, count: 3 },
       envelope: { attack: 1, decay: 0.5, sustain: 0.3, release: 3 },
@@ -106,7 +121,7 @@ class MezzanineTrack {
     }).connect(this.driftFilter);
     this.driftReverb = new Tone.Reverb({ decay: 5, wet: 0.75 }).connect(this.driftDelay);
     this.driftSynth = new Tone.PluckSynth({
-      resonance: 0.8, release: 3,
+      resonance: 0.85, release: 3,
     }).connect(this.driftReverb);
 
     // ── Event move chain: piano -> reverb(0.92) -> echo(0.75, decay:6) -> lpf(90) ──
@@ -117,7 +132,6 @@ class MezzanineTrack {
       delayTime: 0.75, feedback: 0.5, wet: 0.5,
     }).connect(this.moveFilter);
     this.moveReverb = new Tone.Reverb({ decay: 4, wet: 0.8 }).connect(this.moveDelay);
-    // :piano -> FM synth with quick attack, medium decay
     this.pianoSynth = new Tone.PolySynth(Tone.FMSynth, {
       harmonicity: 3,
       modulationIndex: 1.5,
@@ -164,78 +178,89 @@ class MezzanineTrack {
     this._buildLoops();
   }
 
-  // ── Build a pool of Tone.Players for each sample (for polyphonic sample playback) ──
-  _buildSamplePools(names) {
-    for (const name of names) {
-      this.samplePlayers[name] = [];
-      for (let i = 0; i < this._poolSize; i++) {
-        const p = new Tone.Player(sampleBank.url(name));
-        this.samplePlayers[name].push({ player: p, idx: 0 });
-      }
-    }
-  }
-
-  // Play a sample with given params, connecting through an optional destination node
+  /**
+   * Play a sample with Sonic Pi-compatible parameters.
+   * @param {string} name - Sample name (e.g. 'bd_fat')
+   * @param {number} time - Tone.js scheduled time
+   * @param {object} opts - Options:
+   *   amp: volume (default 1)
+   *   playbackRate: speed (default 1)
+   *   finish: 0-1, portion of sample to play (Sonic Pi finish:)
+   *   destination: Tone.js node to connect to (default: this.dest)
+   *   pan: -1 to 1 stereo position
+   */
   _playSample(name, time, opts = {}) {
     if (!this.samplesReady || this.disposed) return;
 
-    // sampleBank.load() returns a Promise (resolves immediately if preloaded)
     sampleBank.load(name).then((buf) => {
       if (this.disposed) return;
-      this._playSampleWithBuffer(buf, time, opts);
+
+      const p = new Tone.Player(buf);
+
+      if (opts.playbackRate !== undefined) {
+        p.playbackRate = opts.playbackRate;
+      }
+
+      // Build signal chain: player -> [gain] -> [panner] -> destination
+      const dest = opts.destination || this.dest;
+      let tail = dest;
+
+      // Panning (Sonic Pi pan: parameter)
+      let panner = null;
+      if (opts.pan !== undefined) {
+        panner = new Tone.Panner(opts.pan).connect(tail);
+        tail = panner;
+      }
+
+      // Gain for amplitude control
+      const amp = opts.amp !== undefined ? opts.amp : 1;
+      const gain = new Tone.Gain(amp).connect(tail);
+      p.connect(gain);
+
+      try {
+        p.start(time);
+
+        // Sonic Pi finish: parameter — stop playback after finish fraction of sample
+        const rate = opts.playbackRate || 1;
+        const fullDur = buf.duration / rate;
+        const finishDur = opts.finish !== undefined
+          ? fullDur * opts.finish
+          : fullDur;
+
+        // Schedule stop at the finish point
+        if (opts.finish !== undefined) {
+          Tone.Transport.scheduleOnce(() => {
+            try { p.stop(); } catch (e) {}
+          }, time + finishDur);
+        }
+
+        // Dispose after full decay
+        const disposeDur = (finishDur + 1.5) * 1000;
+        setTimeout(() => {
+          try { p.stop(); } catch (e) {}
+          try { p.dispose(); } catch (e) {}
+          try { gain.dispose(); } catch (e) {}
+          if (panner) try { panner.dispose(); } catch (e) {}
+        }, disposeDur);
+      } catch (e) {}
     });
   }
 
-  _playSampleWithBuffer(buf, time, opts) {
-    const p = new Tone.Player(buf);
-    const gain = new Tone.Gain(opts.amp !== undefined ? opts.amp : 1);
-
-    if (opts.destination) {
-      gain.connect(opts.destination);
-    } else {
-      gain.connect(this.dest);
-    }
-
-    p.connect(gain);
-
-    if (opts.playbackRate !== undefined) {
-      p.playbackRate = opts.playbackRate;
-    }
-
-    try {
-      p.start(time);
-      const dur = p.buffer.duration / (opts.playbackRate || 1);
-      const disposeTime = Math.max(0.1, dur + 1);
-      p.onstop = () => {
-        setTimeout(() => { try { p.dispose(); gain.dispose(); } catch (e) {} }, 100);
-      };
-      setTimeout(() => {
-        try { p.stop(); } catch (e) {}
-        try { p.dispose(); gain.dispose(); } catch (e) {}
-      }, disposeTime * 1000 + 500);
-    } catch (e) {}
-  }
-
-  // Utility: random float in [lo, hi]
   _rrand(lo, hi) {
     return lo + Math.random() * (hi - lo);
   }
 
-  // Utility: random choice from array
   _choose(arr) {
     return arr[Math.floor(Math.random() * arr.length)];
   }
 
-  // Get chord root MIDI note based on current chord index
   _chordRootMidi() {
     const idx = this.chordIdx % 8;
-    // A2=45, F2=41, G2=43
     if (idx < 4) return 45; // A2
     if (idx < 6) return 41; // F2
     return 43; // G2
   }
 
-  // Get arp notes based on chord index and tone
   _arpNotes() {
     const t = this.data.tone;
     const idx = this.chordIdx % 8;
@@ -254,13 +279,8 @@ class MezzanineTrack {
     const self = this;
     const beatDur = 60 / 80; // 0.75s per beat at 80 BPM
 
-    // ── Chord clock: advance every 4 beats ──
-    // Sonic Pi ticks chord_idx once per sub_bass call (every 4 beats)
-    // We advance on the sub_bass loop to stay in sync
-
     // ── Sub bass: every 4 beats ──
     this.subLoop = new Tone.Loop((time) => {
-      // Advance chord on each sub_bass tick (matches Sonic Pi tick(:chord_idx))
       self.chordIdx = (self.chordIdx + 1) % 8;
       const h = self.data.heat;
       const root = self._chordRootMidi();
@@ -268,7 +288,7 @@ class MezzanineTrack {
       self.subSynth.triggerAttackRelease(
         midiToNote(root), 3, time, amp
       );
-    }, '1m'); // 4 beats = 1 measure
+    }, '1m');
 
     // ── Bass line: every 4 beats ──
     this.bassLoop = new Tone.Loop((time) => {
@@ -278,11 +298,10 @@ class MezzanineTrack {
       self.bassFilter.frequency.rampTo(cut, 0.1, time);
 
       const idx = self.chordIdx % 8;
-      const r = idx < 4 ? 45 : (idx < 6 ? 41 : 43); // A2, F2, G2
+      const r = idx < 4 ? 45 : (idx < 6 ? 41 : 43);
 
       const amp = (0.06 + h * 0.05) * 0.6;
 
-      // 4 bass phrases matching Sonic Pi, cycling via tick
       const phrases = [
         [r, 1.5, null, 0.5, r + 7, 0.5, r + 5, 0.5, r, 1.0],
         [null, 0.5, r, 1.0, r + 3, 0.5, r + 5, 1.0, null, 1.0],
@@ -308,14 +327,13 @@ class MezzanineTrack {
       }
     }, '1m');
 
-    // ── Teardrop arp: every 4 beats (0.5 beat offset at start) ──
+    // ── Teardrop arp: every 4 beats ──
     this.arpLoop = new Tone.Loop((time) => {
       const h = self.data.heat;
       const pr = self.data.price;
       const v = self.data.velocity;
       const tr = self.data.trade_rate;
 
-      // Drop out when hot (matching Sonic Pi: h > 0.75 && rand < 0.6)
       if (h > 0.75 && Math.random() < 0.6) return;
 
       const amp = Math.max(0.015, 0.04 - h * 0.015);
@@ -326,21 +344,20 @@ class MezzanineTrack {
       // 0.5 beat offset (sleep 0.5 at start of Sonic Pi loop)
       let offset = 0.5 * beatDur;
       ns.forEach(n => {
-        // Random skip (rest): 12% chance
         if (Math.random() < 0.12) {
           offset += self._choose([0.25, 0.5]) * beatDur;
           return;
         }
-        // Random octave shift
         const oct = (v > 0.4 && Math.random() < v * 0.4) ? 12 : 0;
         const midi = noteToMidi(n) + oct;
         const vel = amp * self._rrand(0.6, 1.0);
-        const release = self._rrand(1.0, 2.0);
-        // PluckSynth: coeff maps to resonance (lower coeff = brighter, more resonant)
-        self.arpSynth.resonance = self._rrand(0.1, 0.2);
+        // Sonic Pi coeff: 0.1-0.2 controls string brightness in the feedback loop.
+        // In Tone.js PluckSynth, resonance controls sustain length (0-1).
+        // coeff 0.1-0.2 in Sonic Pi = moderately damped but still ringing.
+        // Map to resonance ~0.88-0.95 for similar ring time.
+        self.arpSynth.resonance = self._rrand(0.88, 0.95);
         self.arpSynth.triggerAttack(midiToNote(midi), time + offset, vel * 1.86);
 
-        // Echo note on high trade rate
         if (tr > 0.5 && Math.random() < 0.2) {
           offset += 0.25 * beatDur;
           self.arpSynth.triggerAttack(
@@ -356,27 +373,31 @@ class MezzanineTrack {
     }, '1m');
 
     // ── Kick: every 2 beats ──
+    // Sonic Pi: sample :bd_fat, cutoff: 70, rate: 0.85
     this.kickLoop = new Tone.Loop((time) => {
       const h = self.data.heat;
       const tr = self.data.trade_rate;
       const amp = (0.2 + h * 0.15) * 1.6;
 
-      // sample :bd_fat, cutoff: 70, rate: 0.85
       self._playSample('bd_fat', time, {
         amp: amp,
         playbackRate: 0.85,
+        destination: self.kickFilter,   // LPF cutoff: 70
       });
 
       // Ghost kick at 0.75 beats if trade_rate > 0.4
+      // Sonic Pi: cutoff: 60, rate: 0.8
       if (tr > 0.4) {
         self._playSample('bd_fat', time + 0.75 * beatDur, {
           amp: amp * 0.4,
           playbackRate: 0.8,
+          destination: self.kickGhostFilter,  // LPF cutoff: 60
         });
       }
-    }, '2n'); // 2 beats
+    }, '2n');
 
     // ── Kick ghost: every 0.5 beats, ring pattern [0,0,1,0,0,1,0,0] ──
+    // Sonic Pi: cutoff: 55, rate: 0.75
     this.kickGhostPattern = [0, 0, 1, 0, 0, 1, 0, 0];
     this.kickGhostLoop = new Tone.Loop((time) => {
       const tr = self.data.trade_rate;
@@ -387,34 +408,38 @@ class MezzanineTrack {
         self._playSample('bd_fat', time, {
           amp: (0.06 + h * 0.05) * 1.6,
           playbackRate: 0.75,
+          destination: self.kickPatternFilter,  // LPF cutoff: 55
         });
       }
-    }, '8n'); // 0.5 beats = eighth note
+    }, '8n');
 
-    // ── Snare dub: offset 2 beats, then every 4 beats ──
+    // ── Snare dub: offset 2 beats, every 4 beats ──
+    // Sonic Pi: rate: 0.9, finish: 0.3
     this.snareLoop = new Tone.Loop((time) => {
       const h = self.data.heat;
       const tr = self.data.trade_rate;
       const amp = (0.08 + h * 0.07) * 0.78;
 
-      // Main snare hit with reverb
       self._playSample('sn_dub', time, {
         amp: amp,
         playbackRate: 0.9,
+        finish: 0.3,                        // tight snare hit
         destination: self.snareReverb,
       });
 
-      // Ghost snare: 40% chance when trade_rate > 0.5
+      // Ghost snare: finish: 0.2 (even tighter)
       if (tr > 0.5 && Math.random() < 0.4) {
         self._playSample('sn_dub', time + 1.5 * beatDur, {
           amp: 0.05 * 0.78,
           playbackRate: 1.0,
+          finish: 0.2,
           destination: self.snareGhostReverb,
         });
       }
-    }, '1m'); // every 4 beats
+    }, '1m');
 
     // ── Rim (cowbell): every 0.25 beats, 16-step pattern ──
+    // Sonic Pi: rate: 2.5, finish: 0.04, pan: rrand(-0.2, 0.2)
     this.rimPattern = [0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0];
     this.rimLoop = new Tone.Loop((time) => {
       const tr = self.data.trade_rate;
@@ -424,12 +449,15 @@ class MezzanineTrack {
         self._playSample('drum_cowbell', time, {
           amp: amp,
           playbackRate: 2.5,
+          finish: 0.04,                     // tiny tick, not full cowbell
+          pan: self._rrand(-0.2, 0.2),
         });
       }
       self.rimTick++;
-    }, '16n'); // 0.25 beats
+    }, '16n');
 
     // ── Hat ghost: probabilistic, every 0.5 or 0.25 beats ──
+    // Sonic Pi: rate: rrand(1.2,1.8), finish: 0.05, pan: rrand(-0.4,0.4)
     this.hatLoop = new Tone.Loop((time) => {
       const tr = self.data.trade_rate;
       const prob = 0.1 + tr * 0.35;
@@ -438,12 +466,13 @@ class MezzanineTrack {
         self._playSample('drum_cymbal_closed', time, {
           amp: amp,
           playbackRate: self._rrand(1.2, 1.8),
+          finish: 0.05,                     // crisp tick, not full cymbal
+          pan: self._rrand(-0.4, 0.4),
           destination: self.hatFilter,
         });
       }
-      // Adjust interval: 0.25 beats when tr > 0.6, else 0.5 beats
       self.hatLoop.interval = tr > 0.6 ? '16n' : '8n';
-    }, '8n'); // default 0.5 beats, switches to 0.25 when trade_rate > 0.6
+    }, '8n');
 
     // ── Vinyl dust: every 8 beats ──
     this.vinylLoop = new Tone.Loop((time) => {
@@ -451,7 +480,7 @@ class MezzanineTrack {
         amp: 0.045 * 5.0,
         playbackRate: 0.8,
       });
-    }, '2m'); // 8 beats = 2 measures
+    }, '2m');
 
     // ── Dub wash (hollow pad): every 6-8 beats ──
     this.padLoop = new Tone.Loop((time) => {
@@ -460,19 +489,26 @@ class MezzanineTrack {
       const t = self.data.tone;
 
       const amp = Math.max(0.015, 0.05 - h * 0.025) * 2.66;
-      self.padFilter.frequency.rampTo(midiToHz(55 + pr * 20), 0.5, time);
+      const cutFreq = midiToHz(55 + pr * 20);
+      self.padFilter.frequency.rampTo(cutFreq, 0.5, time);
+      // Tune the noise bandpass to follow the pad cutoff for breathy character
+      self.padNoiseFilter.frequency.rampTo(cutFreq, 0.5, time);
 
-      // chord selection: tone=1 -> minor7, tone=0 -> m7minus5
       const ch = t === 1
-        ? [noteToMidi('A3'), noteToMidi('C4'), noteToMidi('E4'), noteToMidi('G4')]    // Am7
-        : [noteToMidi('A3'), noteToMidi('C4'), noteToMidi('Eb4'), noteToMidi('G4')];  // Am7b5
+        ? [noteToMidi('A3'), noteToMidi('C4'), noteToMidi('E4'), noteToMidi('G4')]
+        : [noteToMidi('A3'), noteToMidi('C4'), noteToMidi('Eb4'), noteToMidi('G4')];
       const note = midiToNote(self._choose(ch));
-      const pan = self._rrand(-0.3, 0.3);
       self.padSynth.triggerAttackRelease(note, 5, time, amp);
 
-      // Randomize next interval: 6 or 8 beats
+      // Swell noise layer for :hollow breathiness
+      // Fade in over attack, fade out over release
+      self.padNoiseGain.gain.cancelScheduledValues(time);
+      self.padNoiseGain.gain.setValueAtTime(0, time);
+      self.padNoiseGain.gain.linearRampToValueAtTime(amp * 0.15, time + 2);
+      self.padNoiseGain.gain.linearRampToValueAtTime(0, time + 5);
+
       self.padLoop.interval = self._choose([6, 8]) * beatDur;
-    }, 6 * beatDur); // initial: 6 beats
+    }, 6 * beatDur);
 
     // ── Deep echo: every 8-12 beats ──
     this.deepLoop = new Tone.Loop((time) => {
@@ -490,15 +526,14 @@ class MezzanineTrack {
       self.deepSynth.triggerAttackRelease(n, 3, time, amp);
 
       self.deepLoop.interval = self._choose([8, 10, 12]) * beatDur;
-    }, 8 * beatDur); // initial: 8 beats
+    }, 8 * beatDur);
 
-    // ── Price drift: every 3 seconds (time-based, not beat-based) ──
+    // ── Price drift: every 3 seconds ──
     this.driftLoop = new Tone.Loop((time) => {
       const pd = self.data.price_delta;
       const mag = Math.abs(pd);
       if (mag <= 0.2) return;
 
-      const t = self.data.tone;
       const sc = getScaleNotes('A4', 'minor_pentatonic', 14, 2);
       const num = Math.min(6, Math.max(2, 2 + Math.floor(mag * 6)));
       const vol = Math.min(0.14, Math.max(0.04, 0.04 + mag * 0.12));
@@ -507,11 +542,11 @@ class MezzanineTrack {
       let offset = 0;
       ns.forEach(n => {
         const v = vol * self._rrand(0.6, 1.0);
-        self.driftSynth.resonance = 0.8;
+        self.driftSynth.resonance = 0.85;
         self.driftSynth.triggerAttack(n, time + offset, v * 1.86);
         offset += self._choose([0.5, 0.75, 1.0]);
       });
-    }, 3); // 3 seconds
+    }, 3);
 
     // ── Ambient drone: every 8 beats ──
     this.droneLoop = new Tone.Loop((time) => {
@@ -519,20 +554,11 @@ class MezzanineTrack {
       const notes = ['A2', 'E3', 'A3'];
       const n = self._choose(notes);
       self.droneSynth.triggerAttackRelease(n, 8, time, 0.08 * 5.0);
-    }, '2m'); // 8 beats
-
-    // ── Event spike check: every 0.5 beats ──
-    // (Spike events are now handled via onEvent, but we keep a polling loop
-    //  for ambient_mode drone which has no event trigger)
-
-    // ── Event move polling: every 0.5 beats ──
-    // (Handled via onEvent instead)
+    }, '2m');
   }
 
   start() {
     Tone.Transport.bpm.value = 80;
-
-    const beatDur = 60 / 80;
 
     this.subLoop.start(0);
     this.bassLoop.start(0);
@@ -548,6 +574,9 @@ class MezzanineTrack {
     this.driftLoop.start(0);
     this.droneLoop.start(0);
 
+    // Start the noise source for pad breathiness
+    this.padNoise.start();
+
     Tone.Transport.start();
   }
 
@@ -555,7 +584,6 @@ class MezzanineTrack {
     if (this.disposed) return;
     this.disposed = true;
 
-    // Stop all loops
     const loops = [
       this.subLoop, this.bassLoop, this.arpLoop,
       this.kickLoop, this.kickGhostLoop, this.snareLoop,
@@ -567,15 +595,16 @@ class MezzanineTrack {
     Tone.Transport.stop();
     Tone.Transport.cancel();
 
-    // Dispose all audio nodes
     const nodes = [
       this.subSynth, this.subFilter,
       this.bassSynth, this.bassFilter,
       this.arpSynth, this.arpFilter, this.arpReverb,
+      this.kickFilter, this.kickGhostFilter, this.kickPatternFilter,
       this.snareReverb, this.snareGhostReverb,
       this.hatFilter,
       this.padSynth, this.padFilter, this.padReverb,
-      this.deepSynth, this.deepDelay, this.deepFilter,
+      this.padNoise, this.padNoiseGain, this.padNoiseFilter,
+      this.deepSynth, this.deepDelay, this.deepFilter, this.deepReverb,
       this.driftSynth, this.driftDelay, this.driftReverb, this.driftFilter,
       this.pianoSynth, this.moveReverb, this.moveDelay, this.moveFilter,
       this.spikeReverb,
@@ -594,7 +623,6 @@ class MezzanineTrack {
     if (this.disposed) return;
     const now = Tone.now();
 
-    // ── Spike event: cymbal soft with reverb, 15s cooldown ──
     if (type === 'spike') {
       const elapsed = Date.now() - this.lastSpikeAt;
       if (elapsed >= this.spikeCooldown) {
@@ -607,7 +635,6 @@ class MezzanineTrack {
       }
     }
 
-    // ── Price move event: piano arpeggio through reverb+echo+lpf chain ──
     if (type === 'price_move') {
       const dir = msg.direction || 1;
       const pd = this.data.price_delta;
@@ -627,7 +654,6 @@ class MezzanineTrack {
       });
     }
 
-    // ── Resolved event: piano scale through reverb+echo ──
     if (type === 'resolved') {
       const result = msg.result || 1;
       const sc = result === 1
