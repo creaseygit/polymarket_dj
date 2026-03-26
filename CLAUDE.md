@@ -25,13 +25,15 @@ python server.py
 Polymarket APIs → Python (data layer) → Sonic Pi (music layer) → Audio Out
                        ↓
               Web Control Panel (localhost:8888)
+                       ↓
+              Track Sandbox (localhost:8888/sandbox)
 ```
 
 ### Data Flow
 1. `polymarket/gamma.py` — REST client fetches markets by volume, category, slug, or live finance pattern
 2. `polymarket/websocket.py` — WebSocket subscribes to asset IDs, receives price changes/trades/book updates
 3. `polymarket/scorer.py` — `MarketScorer` computes heat score (0-1) from price velocity, trade rate, volume, spread
-4. `mixer/mixer.py` — `AutonomousDJ` picks which market to play (manual or autonomous mode). Always selects the primary (Yes/Up) outcome via `_primary_asset()`. Auto-rotates live finance markets when they expire
+4. `mixer/mixer.py` — `AutonomousDJ` manages which market to play. Always selects the primary (Yes/Up) outcome via `_primary_asset()`. Auto-rotates live finance markets when they expire
 5. `server.py` `param_push_loop` — Normalizes raw data to 0–1 and pushes to Sonic Pi every 3s
 6. `sonic_pi/headless.py` — Boots Sonic Pi daemon without GUI, sends code via OSC
 7. Track `.rb` files — Self-contained musical interpretations that read raw data via `get()`
@@ -75,9 +77,7 @@ Tone uses hysteresis to prevent major/minor flickering when price hovers near 0.
 The display price uses the **WebSocket bid/ask midpoint** as the primary source (real-time, matches Polymarket's live display). Falls back to the **Gamma REST API** (`outcomePrices` field, polled every 5s via `price_poll_loop`) when WebSocket data hasn't arrived yet.
 
 ### Single Market Model
-The DJ plays **one market at a time**. Two modes:
-- **Manual (default):** Pick a market from browse tabs or paste a URL; it plays until you pick another
-- **Autonomous:** DJ auto-switches to the hottest market when heat delta exceeds `SWAP_THRESHOLD` (0.25)
+The DJ plays **one market at a time** in manual mode only. Pick a market from browse tabs or paste a URL; it plays until you pick another via `pin_market()`.
 
 ### Outcome Selection
 Markets have multiple outcomes (e.g., "Yes"/"No" or "Up"/"Down"), each with its own asset_id. `_primary_asset()` in `mixer.py` always picks the "Yes" or "Up" outcome to match Polymarket's headline display.
@@ -110,29 +110,36 @@ Markets fetched via `fetch_markets_by_event_slug()` have the parent event's slug
 
 | File | Purpose |
 |------|---------|
-| `server.py` | **Main entry point.** Web server, background loops (data push, price poll), all API handlers, full HTML UI |
+| `server.py` | **Main entry point** (~1750 lines). Web server, background loops (data push, price poll), all API handlers, full HTML UI (main page + sandbox page), track analyzer |
 | `config.py` | All tunable constants (API URLs, scoring weights, OSC config, `BROWSE_CATEGORIES`) |
+| `console.py` | Rich debug console with logging wrappers (legacy, imports stale `SLOT_OSC_MAP`) |
 | `polymarket/gamma.py` | Gamma REST API client: `fetch_active_markets`, `fetch_browse_markets`, `fetch_market_by_slug`, `fetch_markets_by_event_slug`, `fetch_live_finance_markets` |
 | `polymarket/websocket.py` | CLOB WebSocket feed. First message is a list (book snapshot), not a dict |
-| `polymarket/scorer.py` | Heat scoring: `price_velocity * 0.35 + trade_rate * 0.40 + volume * 0.15 + spread * 0.10` |
-| `mixer/mixer.py` | `AutonomousDJ` — market selection, `_primary_asset()`, `_seed_prices()`, manual/autonomous modes, live finance auto-rotation |
-| `osc/bridge.py` | OSC client wrapper, `_scale()` utility |
+| `polymarket/scorer.py` | Heat scoring: `price_velocity * 0.35 + trade_rate * 0.40 + volume * 0.15 + spread * 0.10`. Adaptive trade rate uses EMA baseline with log curve |
+| `mixer/mixer.py` | `AutonomousDJ` — manual market selection via `pin_market()`, `_primary_asset()`, `_seed_prices()`, live finance auto-rotation |
+| `mixer/state.py` | `LayerState`/`MixerState` dataclasses (deprecated, unused) |
+| `mixer/transitions.py` | Fade-in/out/crossfade utilities (deprecated, unused) |
+| `osc/bridge.py` | Minimal OSC wrapper — `send_global()` for one-off events (resolution, ambient). `_scale()` utility |
 | `sonic_pi/headless.py` | Boots Sonic Pi daemon headlessly, manages keep-alive, sends code via `/run-code` OSC, listens for Spider errors |
-| `sonic_pi/midnight_ticker.rb` | Dark electronic track — reference implementation of the data interface |
-| `sonic_pi/oracle.rb` | Piano-only artistic alerts — plays scale motifs only on significant price movements |
 
 ## Tracks
 
 ### midnight_ticker.rb
-Dark electronic track with 8+ live_loops: kick, hats, snare, bass (tb303), sub, pad, lead, texture, events, ambient. All data values drive the music continuously. Reference implementation for the full data interface.
+Dark electronic track with 9+ live_loops: kick, hats, snare, bass (tb303), sub, pad, lead, texture, events, ambient. All data values drive the music continuously. Reference implementation for the full data interface.
 
 ### oracle.rb
 Minimal piano-only alert track. Mostly silent — sound is earned by significant market movement:
-- **`price_watch`** — Detects price deltas > 2¢. Plays ascending/descending piano motifs (2–5 notes) using scale degree patterns, not linear runs. Motifs cycle through variations (triads, arpeggios, turns, leaps). C major when bullish, A minor when bearish (relative minor — same key signature)
-- **`price_event`** — Triggers on `event_price_move` (>3¢ jump). 6-note figure: rising arpeggio for up, descending for down
+- **`price_watch`** — Detects price deltas > 2¢. Plays ascending/descending piano motifs (2–5 notes) using scale degree patterns. C major when bullish, A minor when bearish
+- **`price_event`** — Triggers on `event_price_move` (>3¢ jump). 7-note arpeggio
 - **`resolved`** — 7-note figure on market resolution: triumphant C major ascent or mournful A minor descent
 
 Only reads `:price`, `:tone`, `:event_price_move`, and `:market_resolved`. Ignores heat, velocity, trade_rate, spread.
+
+### poolside.rb
+Piano-based electronic track, BPM 120. 13 live_loops: kick, hats, shaker, clap, piano_chords, bass (tb303), pad, stab, sub, ride, perc, events, resolved, ambient. Tone-aware chord progressions (major7/minor7/dom7/dim7). Bass roots follow chords. Uses all data values.
+
+### mezzanine.rb
+Sigur Rós "Teardrop"-inspired ambient track, BPM 80. Am → Am → F → G progression. Features teardrop arpeggio (pluck), sub bass, bass line (tb303 with 4 phrase variants), kick, kick ghost, snare, ambient pad. Velocity-driven octave jumps in arpeggio. Heat-driven inverse amp (louder when calm).
 
 ## How Sonic Pi Integration Works
 
@@ -183,7 +190,7 @@ set :ambient_mode, 0
 
 7. **Use correct chord names** — `:major7`, `:minor7`, `:maj9`, `:m9`, `:dom7` (NOT `:major9`, `:minor9`, `:M9`)
 
-See `midnight_ticker.rb` for the full data interface, `oracle.rb` for a minimal price-only approach.
+See `midnight_ticker.rb` for the full data interface, `oracle.rb` for a minimal price-only approach. Use the **Track Sandbox** (`/sandbox`) to test tracks with manual slider control.
 
 ### Instrument Loudness Normalization
 
@@ -192,6 +199,17 @@ The mastering pipeline (`python -m mastering --all`) ensures all synths and samp
 **When writing tracks:** Set amp values based on the mix role you want — louder for leads/kicks, quieter for textures/ambience. Don't worry about intrinsic instrument loudness differences; the mastering pipeline handles that.
 
 **After writing/modifying tracks:** Run `python -m mastering --all` to apply normalization. Use `--revert` to undo.
+
+### Mastering Pipeline
+
+Located in `mastering/` with its own docs at `mastering/MASTERING.md`. Workflow:
+1. `instruments.py` — Extract all unique synths/samples from .rb files
+2. `recorder.py` — Boot Sonic Pi headless, play each instrument at amp=0.3, record 5s WAV
+3. `analyzer.py` — Measure LUFS (integrated loudness) using librosa + pyloudnorm
+4. `apply.py` — Parse each .rb, find `amp:` expressions, multiply by per-instrument factor, mark with `# ~nf`
+5. Output: `mastering_output/normalization_table.json`
+
+Extra deps: `pip install -r requirements-mastering.txt` (pyloudnorm, librosa, soundfile, numpy)
 
 ## Background Loops
 
@@ -205,11 +223,20 @@ The mastering pipeline (`python -m mastering --all`) ensures all synths and samp
 
 ## Web UI Structure
 
+### Main Page (localhost:8888)
 The UI has four sections:
-1. **Audio** — Start/Stop, track selector, test sounds, Kill All
-2. **Now Playing** — Current market question, bullish/bearish + price %, raw data values, link to Polymarket
-3. **Mode + Feed** — Manual/Autonomous toggle, WebSocket connection status
+1. **Audio** — Start/Stop, track selector, volume control, test sounds, Kill All, link to Track Sandbox
+2. **Now Playing** — Current market question, bullish/bearish + price %, raw data values (heat, velocity, trade rate, spread), link to Polymarket
+3. **Feed** — WebSocket connection status
 4. **Markets** — URL paste input, "Your Markets" (session list), Browse tabs (Trending, BTC Live, Politics, Sports, Crypto, Finance, Culture, Geopolitics, Tech, Closing Soon)
+
+### Track Sandbox (localhost:8888/sandbox)
+A development tool for testing tracks without live market data:
+- Track selection + Start/Stop (boots Sonic Pi in sandbox mode — no market data push)
+- Manual sliders for all data values: heat, price, velocity, trade_rate, spread (0–1)
+- Toggle buttons for tone (major/minor) and ambient mode
+- One-shot event buttons: heat spike, price up, price down, resolved yes, resolved no
+- **Track Analyzer**: Parses .rb file with regex, shows each `live_loop` and which `get(:param)` calls it reads. Visualizes the instrument-to-data mapping
 
 ### Browse Tabs
 Each tab fetches 10 markets from the Gamma API filtered by `tag_id` (defined in `BROWSE_CATEGORIES` in config.py). Results are cached client-side per tab (except "BTC Live" which always fetches fresh). "Trending" = all markets sorted by volume. "Closing Soon" = sorted by end_date ascending. "BTC Live" = calls `fetch_live_finance_markets()` to find current rolling BTC/ETH windows. Clicking "Play" on a browse result fetches the market via `/api/play-url`, injects it into the DJ, and adds it to "Your Markets".
@@ -224,7 +251,7 @@ A session-only list (JS array, not persisted) of markets the user has played. Cl
 | `[DATA]` | Raw data state pushed to Sonic Pi every 3s |
 | `[PRICE POLL]` | Gamma API price poll every 5s |
 | `[EVENT]` | Heat spike or price move detected |
-| `[DJ]` | Market switch/selection, mode changes |
+| `[DJ]` | Market switch/selection |
 | `[LIVE]` | Live finance rotation: countdown, rotation triggers, pattern matching |
 | `[RESOLVED]` | Market resolution event from WebSocket |
 | `[SONIC PI]` | Code sent to Sonic Pi |
@@ -240,32 +267,39 @@ A session-only list (JS array, not persisted) of markets the user has played. Cl
 - **`clobTokenIds`** from Gamma API is a JSON string, not a list — parsed by `_parse_clob_token_ids()` in `gamma.py`
 - **`outcomePrices`** from Gamma API is also a JSON string — parsed by `_parse_json_string()` in `gamma.py`
 - **Outcome ordering** — `asset_ids[0]` does NOT always correspond to "Yes"/"Up". Use `_primary_asset()` which checks the `outcomes` array to find the correct one
-- **Gamma API prices can be stale** — For fast-moving short-duration markets (e.g., 15-min BTC windows), the Gamma REST API `outcomePrices` may lag behind the live price. Display now uses WebSocket bid/ask midpoint as primary source, with Gamma as fallback
+- **Gamma API prices can be stale** — For fast-moving short-duration markets (e.g., 15-min BTC windows), the Gamma REST API `outcomePrices` may lag behind the live price. Display uses WebSocket bid/ask midpoint as primary source, with Gamma as fallback
 - **WebSocket raw trade prices are unreliable** — Raw trade prices spike to 0.99/0.01 on thin order books. The bid/ask midpoint from the order book is used instead (more stable than last trade price)
 - **WebSocket first message is a list** — `_dispatch()` handles both list and dict messages
 - **Audio device** — scsynth outputs to Windows default audio device
-- **Headless error visibility** — Spider errors are now captured via a UDP listener on `gui_listen_port` and printed to the server console as `[SONIC PI ERROR]`. Without this, errors are silently swallowed in headless mode. Noisy messages (`/incoming/osc`, `/log/info`) are filtered out
+- **Headless error visibility** — Spider errors are captured via a UDP listener on `gui_listen_port` and printed to the server console as `[SONIC PI ERROR]`. Without this, errors are silently swallowed in headless mode. Noisy messages (`/incoming/osc`, `/log/info`) are filtered out
 - **Browse tab tag_ids** — Hardcoded in `BROWSE_CATEGORIES` in config.py. If Polymarket changes their tag IDs, these need updating. Current values: Politics=2, Sports=100639, Crypto=21, Finance=120, Culture=596, Geopolitics=100265, Tech=1401
-- **Event slug on nested markets** — Markets fetched via `fetch_markets_by_event_slug()` don't natively carry the parent event's slug. The function now injects `event_slug` from the parent event object. Without this, live finance detection fails
+- **Event slug on nested markets** — Markets fetched via `fetch_markets_by_event_slug()` don't natively carry the parent event's slug. The function injects `event_slug` from the parent event object. Without this, live finance detection fails
 - **No `tzdata` on Windows** — `zoneinfo` module requires `tzdata` package on Windows. Live finance hourly slugs use `_now_et()` which calculates ET offset manually with DST approximation instead
 - **Live rotation timing** — The DJ checks for expired live markets every 30s (`RESCORE_INTERVAL`). There may be up to 30s delay between market close and rotation. WebSocket resolution events trigger immediate rotation when available
+- **console.py is stale** — Imports `SLOT_OSC_MAP` from `osc/bridge.py` which no longer exports it. Legacy file, not used by the main app
+- **mixer/state.py and mixer/transitions.py are deprecated** — Leftover from earlier multi-layer architecture, not used by current code
 
 ## Web API Endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/status` | Current state: audio, feed, mode, current market + price + raw data values |
+| GET | `/api/status` | Current state: audio, feed, current market + price + raw data values |
 | POST | `/api/start` | Boot Sonic Pi, load track. Body: `{"track": "midnight_ticker"}` |
 | POST | `/api/stop` | Stop audio gracefully |
 | POST | `/api/test-sound` | Test audio. Body: `{"type": "beep"|"kick"|"all_layers"}` |
 | POST | `/api/track` | Switch track. Body: `{"track": "midnight_ticker"}` |
+| POST | `/api/volume` | Set master volume. Body: `{"volume": 0.7}` |
 | POST | `/api/pin` | Play specific market already in DJ's list. Body: `{"slug": "..."}` |
 | POST | `/api/play-url` | Play from Polymarket URL (fetches + injects + pins). Body: `{"url": "..."}` |
-| POST | `/api/unpin` | Clear pin (stays on current market in manual mode) |
-| POST | `/api/autonomous` | Toggle mode. Body: `{"enabled": true|false}` |
+| POST | `/api/unpin` | Clear pin (stays on current market) |
 | POST | `/api/kill-all` | Kill all scsynth.exe and ruby.exe processes |
 | GET | `/api/browse` | Browse markets by category. Params: `tag_id` (int, or `"live"` for rolling finance), `sort` (volume\|closing), `limit` |
 | GET | `/api/categories` | Returns list of browse tab definitions from `BROWSE_CATEGORIES` |
+| GET | `/api/track/analyze` | Parse .rb file, return live_loops + data params each reads. Params: `track` |
+| GET | `/sandbox` | Track Sandbox page |
+| POST | `/api/sandbox/start` | Boot Sonic Pi in sandbox mode (no market data). Body: `{"track": "..."}` |
+| POST | `/api/sandbox/stop` | Stop sandbox mode |
+| POST | `/api/sandbox/push` | Push manual data values. Body: `{"heat": 0.5, "price": 0.6, ...}` |
 
 ## Tech Stack
 
