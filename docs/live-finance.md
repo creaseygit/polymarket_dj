@@ -11,16 +11,18 @@ Polymarket has auto-generated rolling markets for BTC/ETH price movement with fi
 5. The "Crypto Live" browse tab (`tag_id: "live"`) calls this function. Results are never cached client-side since they rotate
 6. Users can also paste hourly URLs directly (e.g. `https://polymarket.com/event/bitcoin-up-or-down-march-25-2026-1am-et`) — auto-rotation works the same way
 
-## Auto-Rotation
+## Auto-Rotation (Per-Session)
 
-When a live finance market is playing (any type — 5m, 15m, or hourly):
+Rotation is driven per-client-session in `server.py`, not by the DJ's global state. This is because each browser client independently selects its own market via `_pin_market_for_session()`.
 
-- `_check_live_rotation()` runs every 30s in the DJ loop, compares `end_date` against UTC now
-- Console shows `[LIVE] <event_slug> ends in 7m23s` countdown
-- When `end_date` passes, `_rotate_live_market()` fetches the next window's market matching the same prefix pattern (e.g. stays on 15m if you started on 15m, stays on hourly if you started on hourly)
+- `_check_live_rotations()` runs every ~30s from the broadcast loop, iterates all sessions
+- For each session watching a live finance market, compares `end_date` against UTC now
+- Console shows `[LIVE:<client_id>] <event_slug> ends in 1m23s` countdown when <2min remain
+- When `end_date` passes, `_rotate_session_to_next_live()` fetches the next window's market matching the same prefix pattern (e.g. stays on 15m if you started on 15m, stays on hourly if you started on hourly)
 - Prefix extraction strips the timestamp or date suffix to find the base pattern (e.g. `bitcoin-up-or-down-march-25-2026-1am-et` → `bitcoin-up-or-down`)
-- On WebSocket resolution event, rotation triggers immediately without waiting for the 30s cycle
-- `_LIVE_SLUG_RE` regex identifies live finance markets by event_slug pattern: matches both `(btc|eth)-updown-\d+m-\d+` and `bitcoin-up-or-down-*-et`
+- On WebSocket resolution event, `_handle_resolution_for_sessions()` triggers immediate rotation for affected sessions without waiting for the 30s cycle
+- `_LIVE_SLUG_RE` regex (in `mixer.py`) identifies live finance markets by event_slug pattern: matches both `(btc|eth)-updown-\d+m-\d+` and `bitcoin-up-or-down-*-et`
+- The DJ also has its own `_check_live_rotation()` / `_rotate_live_market()` methods, but these operate on `dj.current_market` which is not set by per-client market selection — the server-level functions are what drive actual rotation
 
 ## Event Slug Injection
 

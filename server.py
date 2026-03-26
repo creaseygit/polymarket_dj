@@ -13,6 +13,7 @@ import json
 import re
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -265,9 +266,18 @@ async def broadcast_loop(interval=None):
     """Push market data to all connected clients every interval seconds."""
     if interval is None:
         interval = DATA_PUSH_INTERVAL
+    rotation_counter = 0
+    rotation_every = max(1, int(RESCORE_INTERVAL / DATA_PUSH_INTERVAL))  # ~10 cycles = 30s
     try:
         while True:
             await asyncio.sleep(interval)
+
+            # Check live finance rotations every ~30s
+            rotation_counter += 1
+            if rotation_counter >= rotation_every:
+                rotation_counter = 0
+                await _check_live_rotations()
+
             for session in state.sessions.all_sessions():
                 if not session.asset_id:
                     continue
@@ -384,6 +394,105 @@ async def _play_url_for_session(session: ClientSession, url: str):
     except Exception as e:
         print(f"[PLAY_URL] Error: {e}", flush=True)
         return {"error": "Failed to load market from URL"}
+
+
+# ── Per-session live finance rotation ─────────────────────
+
+async def _rotate_session_to_next_live(session: ClientSession, reason: str = "expired"):
+    """Rotate a client session from an expired live finance market to the next one."""
+    import polymarket.gamma as gamma_module
+
+    old_market = session.market
+    old_slug = old_market.get("event_slug", "") if old_market else ""
+
+    print(f"[LIVE:{session.client_id}] Rotating from {old_slug} ({reason})...", flush=True)
+
+    try:
+        live = await asyncio.to_thread(gamma_module.fetch_live_finance_markets)
+        if not live:
+            print(f"[LIVE:{session.client_id}] No next live market found, will retry", flush=True)
+            return
+
+        # Extract prefix like "btc-updown-15m" or "bitcoin-up-or-down"
+        prefix = re.sub(r"-\d+$", "", old_slug)          # strip trailing timestamp
+        prefix = re.sub(r"-[a-z]+-\d+-\d+-\d+[ap]m-et$", "", prefix)  # strip date suffix
+
+        # Match same pattern, different slug
+        match = None
+        for m in live:
+            es = m.get("event_slug", "")
+            if es.startswith(prefix) and m["asset_ids"] and es != old_slug:
+                match = m
+                break
+        # Fallback: any live market with a different slug
+        if not match:
+            match = next((m for m in live if m["asset_ids"] and m.get("event_slug", "") != old_slug), None)
+        # Last resort: same slug (may still be the only one available)
+        if not match:
+            match = next((m for m in live if m["asset_ids"]), None)
+        if not match:
+            print(f"[LIVE:{session.client_id}] No tradeable live market found", flush=True)
+            return
+
+        new_slug = match.get("event_slug", "?")
+        print(f"[LIVE:{session.client_id}] → {new_slug} — {match['question'][:50]}", flush=True)
+
+        # Inject into DJ's list so _pin_market_for_session finds it
+        existing = next((m for m in state.dj.all_markets if m["slug"] == match["slug"]), None)
+        if not existing:
+            state.dj.all_markets.append(match)
+
+        await _pin_market_for_session(session, match["slug"])
+
+    except Exception as e:
+        print(f"[LIVE:{session.client_id}] Rotation failed: {e}", flush=True)
+
+
+async def _check_live_rotations():
+    """Check all sessions for expired live finance markets and rotate them."""
+    for session in state.sessions.all_sessions():
+        market = session.market
+        if not market:
+            continue
+        if not AutonomousDJ._is_live_finance(market):
+            continue
+        end_str = market.get("end_date")
+        if not end_str:
+            continue
+        try:
+            end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+            now_utc = datetime.now(timezone.utc)
+            remaining = (end_dt - now_utc).total_seconds()
+            if remaining > 0:
+                if remaining < 120:
+                    mins, secs = int(remaining // 60), int(remaining % 60)
+                    slug = market.get("event_slug", "?")
+                    print(f"[LIVE:{session.client_id}] {slug} ends in {mins}m{secs}s", flush=True)
+                continue
+        except (ValueError, TypeError):
+            continue
+
+        await _rotate_session_to_next_live(session, "expired")
+
+
+async def _handle_resolution_for_sessions(msg: dict):
+    """Handle market resolution for per-client sessions."""
+    resolved_ids = set(msg.get("assets_ids", []))
+    if not resolved_ids:
+        return
+
+    for session in state.sessions.all_sessions():
+        if session.asset_id not in resolved_ids:
+            continue
+
+        was_live = AutonomousDJ._is_live_finance(session.market) if session.market else False
+        if was_live:
+            await _rotate_session_to_next_live(session, "resolved")
+        else:
+            try:
+                await session.ws.send_json({"type": "event", "event": "market_ended"})
+            except Exception:
+                pass
 
 
 # ── WebSocket handler ─────────────────────────────────────
@@ -550,7 +659,12 @@ async def on_startup(app):
 
     state.dj = AutonomousDJ(state.scorer, None, gamma_module, on_event=_on_dj_event)
     state.dj.on_market_ended = _on_market_ended
-    state.feed = PolymarketFeed(state.scorer, on_resolution=state.dj.on_market_resolved)
+
+    def _on_resolution(msg):
+        state.dj.on_market_resolved(msg)
+        asyncio.ensure_future(_handle_resolution_for_sessions(msg))
+
+    state.feed = PolymarketFeed(state.scorer, on_resolution=_on_resolution)
     state.dj.feed = state.feed
 
     # Re-discover tracks
