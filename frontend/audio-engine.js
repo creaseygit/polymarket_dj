@@ -71,11 +71,62 @@ const audioEngine = (() => {
   return { init, selectTrack, stop, setVolume, onMarketData, handleEvent, registerTrack };
 })();
 
+// ── Sample bank ─────────────────────────────────────────────
+// Loads OGG samples on demand from /static/samples/.
+// Usage:  const player = await sampleBank.getPlayer('bd_fat', destination);
+//         player.start(time);
+
+const sampleBank = (() => {
+  const buffers = {};   // name → Tone.ToneAudioBuffer
+  const loading = {};   // name → Promise
+
+  function url(name) {
+    return `/static/samples/${name}.ogg`;
+  }
+
+  /** Load a sample buffer (cached). Returns a Promise<Tone.ToneAudioBuffer>. */
+  function load(name) {
+    if (buffers[name]) return Promise.resolve(buffers[name]);
+    if (loading[name]) return loading[name];
+    loading[name] = new Promise((resolve, reject) => {
+      const buf = new Tone.ToneAudioBuffer(url(name), () => {
+        buffers[name] = buf;
+        delete loading[name];
+        resolve(buf);
+      }, (err) => {
+        delete loading[name];
+        console.warn(`[SampleBank] Failed to load ${name}:`, err);
+        reject(err);
+      });
+    });
+    return loading[name];
+  }
+
+  /** Get a Tone.Player wired to destination, ready to .start(time). */
+  async function getPlayer(name, destination) {
+    const buf = await load(name);
+    const player = new Tone.Player(buf).connect(destination);
+    return player;
+  }
+
+  /** Preload a list of sample names. Returns Promise that resolves when all are loaded. */
+  function preload(names) {
+    return Promise.all(names.map(n => load(n)));
+  }
+
+  return { load, getPlayer, preload, url };
+})();
+
 // ── Music theory utilities ──────────────────────────────────
 
 const SCALES = {
   major: [0, 2, 4, 5, 7, 9, 11],
   minor: [0, 2, 3, 5, 7, 8, 10],
+  major_pentatonic: [0, 2, 4, 7, 9],
+  minor_pentatonic: [0, 3, 5, 7, 10],
+  major7: [0, 4, 7, 11],
+  minor7: [0, 3, 7, 10],
+  m7minus5: [0, 3, 6, 10],
 };
 
 function midiToNote(midi) {
@@ -85,10 +136,19 @@ function midiToNote(midi) {
 }
 
 function noteToMidi(note) {
-  const match = note.match(/^([A-Ga-g]#?)(-?\d)$/);
+  const match = note.match(/^([A-Ga-g][#b]?)(-?\d)$/);
   if (!match) return 60;
-  const names = { 'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5, 'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11 };
-  return names[match[1].toUpperCase()] + (parseInt(match[2]) + 1) * 12;
+  const names = {
+    'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4, 'F': 5,
+    'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11,
+  };
+  const key = match[1][0].toUpperCase() + match[1].slice(1);
+  return (names[key] ?? 0) + (parseInt(match[2]) + 1) * 12;
+}
+
+/** Convert MIDI note number to Hz. Sonic Pi uses MIDI values for filter cutoffs. */
+function midiToHz(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
 function getScaleNotes(rootNote, scaleType, count, octaves) {
