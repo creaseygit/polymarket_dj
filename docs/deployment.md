@@ -26,7 +26,11 @@ The app runs as a systemd service under the `ubuntu` user.
 
 ## Deploying Changes
 
-After pushing to GitHub:
+**Auto-deploy:** Every push to `master` triggers a GitHub Actions workflow (`.github/workflows/deploy.yml`) that SSHes into Lightsail, pulls the latest code, and restarts the service. No manual steps needed.
+
+The workflow uses three GitHub repo secrets: `LIGHTSAIL_IP`, `LIGHTSAIL_USER`, `LIGHTSAIL_SSH_KEY`.
+
+**Manual deploy** (if needed):
 
 ```bash
 source .env
