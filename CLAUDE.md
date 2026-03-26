@@ -53,8 +53,8 @@ CloudFlare → Nginx → Python aiohttp (data only) ←→ Polymarket APIs
 | `frontend/index.html`     | Main page HTML, loads Strudel from CDN                                                                                |
 | `frontend/app.js`         | UI logic: browse tabs, market picker, sliders, now-playing display                                                    |
 | `frontend/ws-client.js`   | WebSocket client with auto-reconnect                                                                                  |
-| `frontend/audio-engine.js`| Strudel init, track registry, pattern lifecycle, data→pattern bridge, music theory utilities                           |
-| `frontend/tracks/*.js`    | Track files: `oracle.js` (alert piano), `mezzanine.js` (ambient dub), `just_vibes.js` (lo-fi hip hop)               |
+| `frontend/audio-engine.js`| Strudel init, track registry, pattern lifecycle (AudioContext suspend/resume), silence handling, music theory utils    |
+| `frontend/tracks/*.js`    | Track files: `oracle.js` (alert piano), `mezzanine.js` (ambient dub), `just_vibes.js` (lo-fi hip hop). Uses `sound()`, `note()`, `stack()`, `<>` cycling, `struct()`, `degradeBy()` |
 | `frontend/samples/*.ogg`  | 206 OGG samples (CC0, from Freesound via Sonic Pi). Registered as Strudel sample bank                                |
 | `deploy/`                 | Nginx config, systemd service, EC2 setup script                                                                       |
 

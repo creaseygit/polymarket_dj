@@ -33,7 +33,7 @@ const audioEngine = (() => {
     if (!initialized) await init();
 
     // Stop current pattern fully
-    try { hush(); } catch (e) {}
+    try { hush(); } catch (e) { console.warn('[Audio] hush error:', e); }
     playing = false;
 
     const trackDef = trackRegistry[name];
@@ -49,6 +49,14 @@ const audioEngine = (() => {
     if (trackDef.init) {
       trackDef.init();
     }
+
+    // Resume AudioContext if it was suspended by stop()
+    try {
+      if (typeof getAudioContext === 'function') {
+        const ctx = getAudioContext();
+        if (ctx.state === 'suspended') await ctx.resume();
+      }
+    } catch (e) { console.warn('[Audio] resume error:', e); }
 
     // Generate and play the initial pattern
     _playPattern();
@@ -69,6 +77,10 @@ const audioEngine = (() => {
       if (pat) {
         pat.gain(masterVolume).play();
         playing = true;
+      } else {
+        // Track wants silence — replace current pattern with empty one.
+        // Without this, the previous non-null pattern keeps looping.
+        silence.play();
       }
     } catch (e) {
       console.warn('[Audio] Pattern generation error:', e);
@@ -76,7 +88,13 @@ const audioEngine = (() => {
   }
 
   function stop() {
-    try { hush(); } catch (e) {}
+    try { hush(); } catch (e) { console.warn('[Audio] hush error:', e); }
+    // Suspend AudioContext to immediately silence reverb/delay tails
+    try {
+      if (typeof getAudioContext === 'function') {
+        getAudioContext().suspend();
+      }
+    } catch (e) { console.warn('[Audio] suspend error:', e); }
     playing = false;
     currentTrackDef = null;
     currentTrackName = null;

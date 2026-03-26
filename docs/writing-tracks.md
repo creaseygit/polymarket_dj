@@ -6,36 +6,52 @@ Tracks are JavaScript files in `frontend/tracks/` that use Strudel (`@strudel/we
 
 ```javascript
 const myTrack = {
-  name: 'my_track',
-  label: 'My Track',
-  category: 'music',    // 'music' (continuous) or 'alert' (reactive)
+  name: "my_track",
+  label: "My Track",
+  category: "music",  // "music" (continuous) or "alert" (reactive)
 
-  init() {
-    // Reset any persistent state (chord index, counters, etc.)
-  },
+  init() {},
 
   pattern(data) {
     // Called every 3s with market data. Return a Strudel Pattern or null (silence).
-    // Build layers and stack() them.
-    const layers = [];
-    layers.push(note('c3 e3 g3').s('sine').gain(0.2));
-    layers.push(s('bd_fat').struct('t ~ t ~'));
-    return stack(...layers).cpm(80 / 4);  // set BPM
+    const h = data.heat || 0.3;
+
+    return stack(
+      // bass — chord roots cycle via <>
+      note("<c2 c2 f2 g2>").sound("sawtooth")
+        .lpf(400).gain(0.3 + h * 0.2),
+
+      // kick & snare
+      sound("bd_fat").struct("x ~ x ~").gain(0.4),
+      sound("sn_dub").struct("~ x ~ ~").gain(0.15).room(0.5),
+
+      // piano melody
+      note("c4 eb4 g4 ~ c4 ~ bb3 g3").sound("piano")
+        .gain(0.3).room(0.3)
+    ).cpm(20);  // 80 BPM (= 20 cycles per minute)
   },
 
   onEvent(type, msg, data) {
-    // Handle one-shot events. Return a Pattern to layer on top, or null.
-    if (type === 'spike') return s('drum_cymbal_soft').gain(0.1).room(0.6);
+    // One-shot events. Return a Pattern to layer on top, or null.
+    if (type === "spike") return sound("drum_cymbal_soft").gain(0.1).room(0.6);
     return null;
   },
 };
 
-audioEngine.registerTrack('my_track', myTrack);
+audioEngine.registerTrack("my_track", myTrack);
 ```
 
-**Key principle: patterns are regenerated, not mutated.** The `pattern(data)` function is called fresh every 3 seconds with new data. It produces a new Pattern object each time. There is no persistent synth state or parameter ramping — the 3-second interval is slow enough that stepped changes sound fine.
+**Key principle: patterns are regenerated, not mutated.** The `pattern(data)` function is called fresh every 3 seconds with new data. It produces a new Pattern object each time. Calling `.play()` on a new pattern seamlessly swaps it on Strudel's singleton cyclist — the cycle position is preserved, not reset.
 
-**Persistent state** across ticks (e.g., chord index, phrase counter) lives as closure variables or properties on the track object.
+**Critical rules for stable, musical output:**
+
+1. **Never use `Math.random()`** in `pattern()`. JS randomness produces different values on each 3-second rebuild, making the music chaotic. Use Strudel's cycle-deterministic randomness instead: `degradeBy()`, `rand.range()`, `sometimes()`.
+
+2. **Use `<>` mini-notation for progressions**, not JS counters. `note("<a2 a2 f2 g2>")` cycles one value per bar based on the Strudel cycle position — stable across rebuilds.
+
+3. **`struct()` already defines subdivision.** A 16-element struct gives 16th notes natively. Do NOT add `fast()` on top of struct patterns — that creates 64th notes.
+
+4. **Use data values only for parameters** (gain, filter cutoff) and structural decisions (which layers to include). The pattern *structure* (rhythms, note sequences) should be Strudel mini-notation, not JS-computed.
 
 ## Data Received
 
@@ -86,24 +102,25 @@ Add metadata as comments at the top of the file for the server to parse:
 
 Use samples in patterns directly by name:
 ```javascript
-s('bd_fat').speed(0.85).lpf(midiToHz(70)).gain(0.3)
-s('sn_dub').speed(0.9).end(0.3).gain(0.15).room(0.5)
-s('drum_cymbal_closed').speed(1.5).end(0.05).hpf(midiToHz(110))
+sound("bd_fat").speed(0.85).lpf(370).gain(0.3)
+sound("sn_dub").speed(0.9).end(0.3).gain(0.15).room(0.5)
+sound("drum_cymbal_closed").speed(1.5).end(0.05).hpf(4200)
 ```
 
-## Sonic Pi → Strudel Synth Mapping
+Strudel also has a built-in sampled **piano** (loaded from CDN on first use):
+```javascript
+note("c4 e4 g4").sound("piano").gain(0.3).room(0.5)
+```
 
-The original tracks were authored in Sonic Pi (`sonic_pi/*.rb`). Here's how each Sonic Pi synth maps to Strudel:
+## Synth Reference
 
-| Sonic Pi synth | Strudel equivalent | Notes |
+| Sound | Usage | Notes |
 | --- | --- | --- |
-| `:piano` | `s('fm')` with low `fmi`, fast `fmdecay` | `hard` → fmi (0.5-1.5), `vel` → decay length. `fmdecay` creates the hammer-strike brightness |
-| `:pluck` | `s('triangle')` with short decay + `room` | Approximation of Karplus-Strong. No direct equivalent in superdough |
-| `:tb303` | `s('sawtooth')` with `lpf`/`lpq` | Resonant acid bass. Use `lpq` for resonance |
-| `:hollow` | `s('triangle')` with `lpf` + high `room` | Breathy band-filtered noise character. Triangle + heavy reverb approximates it |
-| `:dark_ambience` | `s('sawtooth')` with heavy `lpf` + `room` | Detuned saw pad |
-| `:sine` | `s('sine')` | Direct equivalent |
-| samples | `s('sample_name')` | Direct: `s('bd_fat')`, `s('sn_dub')`, etc. |
+| `"piano"` | `.sound("piano")` | Built-in sampled piano (CDN). Use for all piano sounds |
+| `"sine"` | `.sound("sine")` | Pure sine. Good for sub bass |
+| `"sawtooth"` | `.sound("sawtooth")` | Saw wave. Good for bass lines, pads with `.lpf()` |
+| `"triangle"` | `.sound("triangle")` | Triangle wave. Good for plucks, arps, pads |
+| samples | `sound("bd_fat")` | Custom OGG samples: `bd_fat`, `sn_dub`, `drum_cymbal_closed`, etc. |
 
 ## Sonic Pi → Strudel Parameter Mapping
 
@@ -126,38 +143,44 @@ The original tracks were authored in Sonic Pi (`sonic_pi/*.rb`). Here's how each
 Common patterns used in existing tracks:
 
 ```javascript
-// Notes: play a sequence
-note('c3 e3 g3').s('sine').gain(0.2)
+// ── Basic patterns ──
+note("c3 e3 g3").sound("sine").gain(0.2)       // synth notes
+sound("bd_fat").speed(0.85).lpf(370).gain(0.3)  // sample trigger
+note("c4 e4 g4").sound("piano").room(0.3)        // sampled piano
 
-// Samples: trigger by name
-s('bd_fat').speed(0.85).lpf(midiToHz(70))
+// ── Stack layers ──
+stack(
+  sound("bd_fat").struct("x ~ x ~").gain(0.4),
+  sound("sn_dub").struct("~ x ~ ~").gain(0.15),
+  note("c3 e3 g3").sound("sine").gain(0.2)
+).cpm(20)  // 80 BPM (= 20 cycles per minute)
 
-// Stack layers (play simultaneously)
-stack(bassLayer, drumLayer, padLayer)
+// ── Cycling / Progressions ──
+note("<a2 a2 f2 g2>").sound("sine")   // <> = one per cycle (chord roots)
+note("[c3 e3 g3 e3]").sound("sine")   // [] = all in one cycle (arp)
 
-// Rhythmic structures (boolean patterns)
-s('bd_fat').struct('t ~ t ~')      // beats 1 and 3
-s('sn_dub').struct('~ t ~ ~')      // beat 2
+// ── Rhythms ──
+sound("bd_fat").struct("x ~ x ~")      // 4 positions = quarter notes
+sound("sn_dub").struct("~ x ~ ~")      // snare on beat 2
+sound("drum_cowbell").struct("~ ~ ~ x ~ ~ x ~ ~ ~ x ~ ~ x ~ ~")  // 16th notes
+// WARNING: struct element count = subdivision. Do NOT add fast() on top.
 
-// Speed up patterns
-s('drum_cowbell').struct('~ ~ ~ t ~ ~ t ~').fast(4)  // 16th notes
+// ── Duration weights ──
+note("[a2@3 ~ e3 d3 a2@2]")  // a2=3/8, rest=1/8, e3=1/8, d3=1/8, a2=2/8
 
-// Slow down patterns
-s('vinyl_hiss').slow(2)  // every 2 cycles (8 beats)
+// ── Speed / Slow ──
+sound("vinyl_hiss").slow(2)   // every 2 cycles
+sound("hh").fast(4)           // 4× speed (for simple patterns WITHOUT struct)
 
-// Probabilistic triggering
-s('drum_cymbal_closed').degradeBy(0.6)  // 40% chance of playing
+// ── Probabilistic (cycle-deterministic, safe for rebuilds) ──
+sound("hh").degradeBy(0.6)               // 40% chance of playing
+sound("hh").gain(rand.range(0.05, 0.15)) // random gain per event
+sound("hh").speed(rand.range(1.2, 1.8))  // random speed per event
 
-// Random values per event
-s('drum_cymbal_closed').speed(rand.range(1.2, 1.8)).gain(rand.range(0.02, 0.06))
+// ── Rests ──
+note("c3 ~ e3 ~ g3").sound("sine")  // ~ = silence
 
-// Rests in sequences
-note('c3 ~ e3 ~ g3').s('sine')  // ~ = rest
-
-// Set BPM: cycles per minute = BPM / beats_per_cycle
-stack(...layers).cpm(80 / 4)  // 80 BPM, 4 beats per cycle
-
-// Panning with LFO
+// ── Pan with LFO ──
 .pan(sine.range(0.3, 0.7).slow(4))
 ```
 
