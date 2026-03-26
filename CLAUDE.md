@@ -133,16 +133,13 @@ Markets fetched via `fetch_markets_by_event_slug()` have the parent event's slug
 
 ## Tracks
 
-### midnight_ticker.rb
-Dark electronic track with 9+ live_loops: kick, hats, snare, bass (tb303), sub, pad, lead, texture, events, ambient. All data values drive the music continuously. Reference implementation for the full data interface.
-
 ### oracle.rb
 Minimal piano-only alert track. Mostly silent — sound is earned by significant market movement:
-- **`price_watch`** — Detects price deltas > 2¢. Plays ascending/descending piano motifs (2–5 notes) using scale degree patterns. C major when bullish, A minor when bearish
-- **`price_event`** — Triggers on `event_price_move` (>3¢ jump). 7-note arpeggio
+- **`price_watch`** — Detects price deltas > 4¢. Plays ascending/descending piano motifs (2–5 notes) using scale degree patterns. C major when bullish, A minor when bearish. Volume scales with velocity, trade_rate, and move magnitude
+- **`price_event`** — Triggers on `event_price_move` (>3¢ jump). 7-note arpeggio. Volume scales with velocity and trade_rate
 - **`resolved`** — 7-note figure on market resolution: triumphant C major ascent or mournful A minor descent
 
-Only reads `:price`, `:tone`, `:event_price_move`, and `:market_resolved`. Ignores heat, velocity, trade_rate, spread.
+Reads `:price`, `:tone`, `:velocity`, `:trade_rate`, `:event_price_move`, and `:market_resolved`. Ignores heat, spread.
 
 ### mezzanine.rb
 Sigur Rós "Teardrop"-inspired ambient track, BPM 80. Am → Am → F → G progression. Features teardrop arpeggio (pluck), sub bass, bass line (tb303 with 4 phrase variants), kick, kick ghost, snare, ambient pad. Velocity-driven octave jumps in arpeggio. Heat-driven inverse amp (louder when calm).
@@ -165,7 +162,9 @@ The headless launcher (`sonic_pi/headless.py`):
 
 **Critical: 16KB OSC limit.** Sonic Pi's Spider server uses `recvfrom(16384)` — track `.rb` files must produce OSC packets under 16KB. The `run_file` method strips comment-only lines and blank lines before sending to stay within this limit. Keep tracks concise; avoid verbose comments in `.rb` files.
 
-**Orphan cleanup:** Previous headless instances can leave `scsynth.exe` and `ruby.exe` running. The web UI has a "Kill All" button. The `atexit` handler in `headless.py` also cleans up.
+**Orphan cleanup:** Previous headless instances can leave `scsynth.exe` and `ruby.exe` running. The Stop button and Kill All button both run `taskkill /F` on these processes. The `atexit` handler in `headless.py` also cleans up.
+
+**Track hot-reload:** Tracks are re-discovered from disk on every Start and Track Switch, so new/edited/deleted `.rb` files are picked up without restarting the server.
 
 ## Writing New Tracks
 
