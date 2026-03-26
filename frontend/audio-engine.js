@@ -4,6 +4,7 @@
 const audioEngine = (() => {
   let initialized = false;
   let currentTrack = null;
+  let currentTrackGain = null;
   let masterGain = null;
 
   // Track registry — populated by track files calling audioEngine.registerTrack()
@@ -17,14 +18,28 @@ const audioEngine = (() => {
     console.log('[Audio] Tone.js initialized');
   }
 
-  async function selectTrack(name) {
-    if (!initialized) await init();
-
-    // Stop current track
+  // Tear down the current track and its isolation gain node.
+  // Disconnecting the gain node instantly silences any lingering audio
+  // (orphaned sample players, delay tails, etc.) without needing to
+  // track every dynamically-created node inside the track.
+  function _teardownTrack() {
     if (currentTrack) {
       currentTrack.stop();
       currentTrack = null;
     }
+    if (currentTrackGain) {
+      currentTrackGain.disconnect();
+      currentTrackGain.dispose();
+      currentTrackGain = null;
+    }
+    Tone.Transport.stop();
+    Tone.Transport.cancel();
+  }
+
+  async function selectTrack(name) {
+    if (!initialized) await init();
+
+    _teardownTrack();
 
     const TrackClass = trackRegistry[name];
     if (!TrackClass) {
@@ -32,18 +47,19 @@ const audioEngine = (() => {
       return;
     }
 
-    currentTrack = new TrackClass(masterGain);
+    // Per-track gain node isolates this track's audio from masterGain.
+    currentTrackGain = new Tone.Gain(1).connect(masterGain);
+    currentTrack = new TrackClass(currentTrackGain);
     currentTrack.start();
+    // Ensure Transport is running (some tracks forget to start it)
+    if (Tone.Transport.state !== 'started') {
+      Tone.Transport.start();
+    }
     console.log('[Audio] Track started:', name);
   }
 
   function stop() {
-    if (currentTrack) {
-      currentTrack.stop();
-      currentTrack = null;
-    }
-    Tone.Transport.stop();
-    Tone.Transport.cancel();
+    _teardownTrack();
   }
 
   function setVolume(v) {

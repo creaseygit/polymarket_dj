@@ -64,6 +64,7 @@ function onTrackChange() {
   const track = document.getElementById('track-select').value;
   if (audioRunning) {
     audioEngine.selectTrack(track);
+    updateAudioUI();
     log('Switched to: ' + track);
   }
   wsClient.send({ action: 'track', name: track });

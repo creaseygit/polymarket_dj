@@ -7,7 +7,7 @@ Tracks are JavaScript files in `frontend/tracks/` that use Tone.js to generate a
 ```javascript
 class MyTrack {
   constructor(destination)  // Create synths, loops, connect to Tone.js destination
-  start()                   // Start Tone.Transport and loops
+  start()                   // Start loops (engine ensures Transport is running)
   stop()                    // Stop and dispose all synths/loops
   update(data)              // Called every 3s with market data object
   onEvent(type, msg)        // Handle one-shot events (spike, price_move, resolved)
@@ -16,6 +16,8 @@ class MyTrack {
 // Register with the audio engine
 audioEngine.registerTrack('my_track', MyTrack);
 ```
+
+**Audio isolation:** The `destination` passed to the constructor is a per-track gain node, not the master output directly. When the user switches tracks, the engine disconnects this node to instantly silence all lingering audio (delay tails, orphaned sample players, etc.). Tracks should connect all audio chains to `destination` — never directly to `Tone.Destination`.
 
 ## Data Received
 
