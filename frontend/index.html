@@ -21,10 +21,10 @@
         <span id="audio-label">Stopped</span>
       </div>
     </div>
-    <div class="audio-grid">
+    <div id="audio-prompt" class="audio-prompt">Please choose a market below</div>
+    <div class="audio-grid" id="audio-grid" style="display:none">
       <div class="audio-controls">
-        <button onclick="startAudio()">Start</button>
-        <button class="danger" onclick="stopAudio()">Stop</button>
+        <button id="audio-toggle-btn" onclick="toggleAudio()">Play</button>
       </div>
       <div class="audio-track">
         <label style="color:#555; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">Track</label>

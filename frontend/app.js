@@ -52,6 +52,14 @@ function stopAudio() {
   if (activeTab && browseCache[activeTab]) renderBrowse(browseCache[activeTab]);
 }
 
+function toggleAudio() {
+  if (audioRunning) {
+    stopAudio();
+  } else {
+    startAudio();
+  }
+}
+
 function onTrackChange() {
   const track = document.getElementById('track-select').value;
   if (audioRunning) {
@@ -185,9 +193,24 @@ function renderBrowse(markets) {
 // ── UI update functions (called by ws-client) ──
 function updateAudioUI() {
   const ad = document.getElementById('audio-dot');
+  const prompt = document.getElementById('audio-prompt');
+  const grid = document.getElementById('audio-grid');
+  const btn = document.getElementById('audio-toggle-btn');
+  const hasMarket = !!currentMarketSlug;
+
   ad.className = 'dot ' + (audioRunning ? 'dot-on' : 'dot-off');
   const track = document.getElementById('track-select').value;
   document.getElementById('audio-label').textContent = audioRunning ? 'Playing: ' + track : 'Stopped';
+
+  if (hasMarket) {
+    prompt.style.display = 'none';
+    grid.style.display = '';
+    btn.textContent = audioRunning ? 'Stop' : 'Play';
+    btn.className = audioRunning ? 'danger' : '';
+  } else {
+    prompt.style.display = '';
+    grid.style.display = 'none';
+  }
 }
 
 function onWsStatus(data) {
@@ -245,11 +268,13 @@ function onWsMarketInfo(market) {
   if (!market) {
     np.style.display = 'none';
     currentMarketSlug = null;
+    updateAudioUI();
     if (activeTab && browseCache[activeTab]) renderBrowse(browseCache[activeTab]);
     return;
   }
   np.style.display = '';
   currentMarketSlug = market.slug;
+  updateAudioUI();
   document.getElementById('np-question').textContent = market.question;
   const npLink = document.getElementById('np-link');
   if (market.link) {

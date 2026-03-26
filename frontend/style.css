@@ -15,6 +15,7 @@ h1 { color: #00ff88; font-size: 24px; margin-bottom: 5px; }
   gap: 0 16px;
   align-items: center;
 }
+.audio-prompt { color: #555; font-size: 13px; padding: 8px 0; }
 .audio-status { display: flex; align-items: center; gap: 6px; }
 .audio-controls { display: flex; gap: 6px; }
 .audio-track { display: flex; flex-direction: column; gap: 4px; justify-self: end; }
