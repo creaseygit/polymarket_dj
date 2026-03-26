@@ -21,7 +21,7 @@ const oracleTrack = {
     const t = data.tone !== undefined ? data.tone : 1;
     const scaleName = t === 1 ? 'C4:major' : 'A3:minor';
 
-    // Bigger move → more chords (2-5)
+    // 2-5 chords based on magnitude
     const num = Math.min(5, Math.max(2, 2 + Math.floor(mag * 5)));
 
     // Scale degree triads: [root,3rd,5th] ascending or descending
@@ -36,7 +36,7 @@ const oracleTrack = {
     const rests = Array(Math.max(1, 8 - num)).fill('-');
     const pat = [...triads, ...rests].join(' ');
 
-    // Volume scales with magnitude and market activity
+    // Base volume scales with magnitude and market activity
     const v = data.velocity || 0.1;
     const tr = data.trade_rate || 0.2;
     const activity = Math.min(1.0, 0.3 + v * 0.4 + tr * 0.3);
@@ -45,8 +45,10 @@ const oracleTrack = {
     return n(pat)
       .scale(scaleName)
       .sound("piano")
-      .gain(vol)
-      .room(0.6)
+      // Humanize: random gain variation per chord + slight timing drift
+      .gain(rand.range(vol * 0.6, vol * 1.2))
+      .late(rand.range(0, 0.02))
+      .room(rand.range(0.4, 0.7))
       .clip(2)
       .cpm(20);
   },
