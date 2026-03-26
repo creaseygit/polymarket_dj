@@ -9,7 +9,6 @@ MARKET_FETCH_LIMIT = 50          # pull top N active markets to score from
 # ── Mixer ────────────────────────────────────────────────
 MAX_ACTIVE_LAYERS  = 5           # simultaneous market→instrument mappings
 MIN_ACTIVE_LAYERS  = 2           # floor — always keep something playing
-SWAP_THRESHOLD     = 0.25        # score delta before triggering a swap
 FADE_BARS          = 8           # crossfade duration in musical bars
 
 # ── Scoring weights ──────────────────────────────────────

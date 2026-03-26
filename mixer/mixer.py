@@ -1,7 +1,7 @@
 import asyncio
 import re
 from datetime import datetime, timezone
-from config import RESCORE_INTERVAL, SWAP_THRESHOLD
+from config import RESCORE_INTERVAL
 
 # Matches live finance event slugs like btc-updown-15m-1774385100
 _LIVE_SLUG_RE = re.compile(r"^(btc|eth)-updown-\d+m-\d+$|^bitcoin-up-or-down-.+-et$")
@@ -9,13 +9,8 @@ _LIVE_SLUG_RE = re.compile(r"^(btc|eth)-updown-\d+m-\d+$|^bitcoin-up-or-down-.+-
 
 class AutonomousDJ:
     """
-    Single-market DJ. Two modes:
-
-    Manual (default): A market is selected via pin_market() and plays
-    until another is selected. No automatic switching.
-
-    Autonomous: The hottest market plays automatically. Switches
-    when a significantly hotter market emerges.
+    Single-market DJ. A market is selected via pin_market() and plays
+    until another is selected.
     """
 
     def __init__(self, scorer, feed, osc_bridge, gamma):
@@ -27,9 +22,6 @@ class AutonomousDJ:
         self.current_market = None
         self.current_asset  = None
         self.all_markets = []
-
-        # Mode: False = manual (default), True = autonomous
-        self.autonomous = False
         self.pinned_slug = None
 
     # ── Public control ────────────────────────────────────
@@ -37,7 +29,6 @@ class AutonomousDJ:
     def pin_market(self, slug: str):
         """Select a specific market to play. Stays until changed."""
         self.pinned_slug = slug
-        self.autonomous = False
         # Find and switch immediately
         market = next(
             (m for m in self.all_markets if m["slug"] == slug), None
@@ -48,17 +39,8 @@ class AutonomousDJ:
         print(f"[DJ] Playing: {slug}", flush=True)
 
     def unpin(self):
-        """Clear pinned market. If autonomous, DJ picks next. If manual, keeps current."""
+        """Clear pinned market. Keeps current market playing."""
         self.pinned_slug = None
-
-    def set_autonomous(self, enabled: bool):
-        """Toggle autonomous mode."""
-        self.autonomous = enabled
-        if enabled:
-            self.pinned_slug = None
-            print("[DJ] Autonomous mode ON", flush=True)
-        else:
-            print("[DJ] Manual mode ON", flush=True)
 
     # ── Main loop ─────────────────────────────────────────
 
@@ -69,8 +51,6 @@ class AutonomousDJ:
             await asyncio.sleep(RESCORE_INTERVAL)
             await self._refresh_markets()
             await self._check_live_rotation()
-            if self.autonomous:
-                await self._auto_mix()
             self._log_now_playing()
 
     async def _refresh_markets(self):
@@ -104,34 +84,6 @@ class AutonomousDJ:
 
         except Exception as e:
             print(f"[DJ] Market refresh failed: {e}")
-
-    async def _auto_mix(self):
-        """Autonomous mode: pick the hottest market."""
-        if not self.all_markets:
-            return
-
-        # Rank by primary asset per market (the Yes/Up outcome)
-        primary_aids = [self._primary_asset(m) for m in self.all_markets if m["asset_ids"]]
-        ranked = self.scorer.rank(primary_aids)
-        hot = [(aid, score) for aid, score in ranked if score > 0]
-
-        if not hot:
-            self._enter_ambient_mode()
-            return
-
-        target_asset = hot[0][0]
-        target_market = self._find_market(target_asset)
-
-        if self.current_asset == target_asset:
-            return
-
-        if self.current_asset:
-            current_heat = self.scorer.heat(self.current_asset)
-            target_heat = self.scorer.heat(target_asset)
-            if target_heat - current_heat < SWAP_THRESHOLD:
-                return
-
-        self._switch_market(target_asset, target_market)
 
     def _switch_market(self, asset_id: str, market: dict | None):
         """Switch to a new market."""
@@ -194,9 +146,8 @@ class AutonomousDJ:
         if not self.current_market:
             return
         heat = self.scorer.heat(self.current_asset) if self.current_asset else 0
-        mode = "AUTO" if self.autonomous else "MANUAL"
         live_tag = " [LIVE]" if self._is_live_finance(self.current_market) else ""
-        print(f"[DJ] [{mode}]{live_tag} heat={heat:.2f}  {self.current_market['question'][:50]}", flush=True)
+        print(f"[DJ]{live_tag} heat={heat:.2f}  {self.current_market['question'][:50]}", flush=True)
 
     @staticmethod
     def _is_live_finance(market: dict) -> bool:
