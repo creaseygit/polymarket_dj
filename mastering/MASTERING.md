@@ -1,99 +1,111 @@
-# Mastering Pipeline — Status & Spec
+# Mastering Pipeline — Per-Instrument Normalization
 
 ## Problem
 
-Each Sonic Pi track has 10-16 live_loops using different synths and samples. These instruments have wildly different intrinsic loudness at the same `amp:` value — e.g. `:sine` at `amp: 0.3` measures -31.9 LUFS, while `:hollow` at `amp: 0.3` measures -49.2 LUFS. That's a 17 dB gap. The result is that authored `amp:` values don't produce predictable volume — a loop using `:piano` with `amp: 0.08` can be louder than a loop using `:hollow` with `amp: 0.5`.
+Each Sonic Pi synth and sample has wildly different intrinsic loudness at the same `amp:` value — e.g. `:sine` at `amp: 0.3` measures -27 LUFS, while `:hollow` at `amp: 0.3` measures -49 LUFS. That's a 22 dB gap. This means the LLM author can't reason about relative volume — `amp: 0.3` on piano sounds completely different from `amp: 0.3` on hollow.
 
-## What's Built
+## Solution: Per-Instrument Normalization Factors
 
-### Pipeline (`mastering/`)
+The pipeline measures each instrument's intrinsic loudness, computes a normalization factor, and multiplies it into every `amp:` expression in the track. After normalization, all instruments at `amp: 0.3` produce the same perceived loudness (LUFS). The author's `amp:` values then directly control relative mix balance.
+
+### Example
+
+Before normalization:
+```ruby
+sample :bd_haus, amp: amp_val, cutoff: 80     # very loud intrinsically
+play notes, amp: amp_val, attack: 1.5          # use_synth :hollow — very quiet intrinsically
+```
+
+After normalization:
+```ruby
+sample :bd_haus, amp: amp_val * 0.4, cutoff: 80     # ~nf  (cut: bd_haus is loud)
+play notes, amp: amp_val * 2.5, attack: 1.5          # ~nf  (boost: hollow is quiet)
+```
+
+Now both lines at `amp_val = 0.3` produce the same perceived loudness. The author controls relative balance by setting different amp values — no need to guess at intrinsic loudness differences.
+
+## How It Works
+
+### Pipeline
 
 ```
-python -m mastering --track poolside --duration 4
+python -m mastering --all              # full run: record + analyze + apply
+python -m mastering --all --no-apply   # just build the normalization table
+python -m mastering --all --skip-record  # reuse existing WAVs
+python -m mastering --revert           # restore all tracks from .bak
+python -m mastering --revert NAME      # restore one track
 ```
 
-**Step 1 — Extract instruments** (`instruments.py`):
-Parses a `.rb` track file, finds every unique `use_synth :name` / `synth :name` / `sample :name`, and maps which loops use which instruments.
+**Step 1 — Discover instruments** (`instruments.py`):
+Scans ALL `.rb` tracks, finds every unique `use_synth :name` / `synth :name` / `sample :name`. The normalization table is global — piano gets the same factor regardless of which track uses it.
 
 **Step 2 — Record each instrument** (`recorder.py`):
-Boots Sonic Pi headless, plays each instrument once at a fixed reference amp (0.3) and records it to WAV via `recording_start`/`recording_stop`. Sonic Pi saves recordings to `%TEMP%/sonic-pi*/`, the recorder finds and moves them.
+Boots Sonic Pi headless, plays each unique instrument once at reference amp (0.3), records to WAV. Stored in `mastering_output/_instruments/`.
 
 **Step 3 — Analyze** (`analyzer.py`):
-Measures each WAV: integrated LUFS (ITU-R BS.1770 via pyloudnorm), RMS dBFS, peak dBFS, spectral centroid, frequency band energy.
+Measures integrated LUFS (ITU-R BS.1770 via pyloudnorm) for each instrument WAV.
 
-**Step 4 — Compute corrections** (`cli.py`):
-For each loop, looks up its instrument's measured LUFS and computes `correction_db = target_lufs - instrument_lufs`. Converts to an amp multiplier: `10^(correction_db/20)`.
+**Step 4 — Compute normalization factors** (`cli.py`):
+Target = median LUFS of all valid instruments. For each instrument:
+- `factor = 10^((target - measured_lufs) / 20)`
+- Capped to [0.1, 5.0] (−20 dB to +14 dB)
+- Factors within 0.02 of 1.0 are skipped
 
 **Step 5 — Apply** (`apply.py`):
-Wraps each corrected loop body in `with_fx :level, amp: X do # [mastering] ... end`. Backs up originals to `.rb.bak`.
+For each `synth :NAME, amp: EXPR` / `sample :NAME, amp: EXPR` / `play ..., amp: EXPR`:
+- Determines the instrument (explicit name or tracked `use_synth`)
+- Multiplies the amp expression by the factor
+- Marks the line with `# ~nf` (normalization factor applied)
+- Creates `.rb.bak` backup before modifying
 
-### Other modules
-- `parser.py` — Parses `.rb` track files into structured parts (live_loops, defines, defaults, sync deps, top-level vars). Well-tested, works on all 4 tracks.
-- `solo_gen.py` — Generates standalone `.rb` snippets per live_loop. Was used in earlier approach (recording whole loops), still works but not used by the current instrument-based pipeline.
-- `reporter.py` — Generates text/JSON balance reports. Was used in earlier approach, not used by current pipeline.
+### Amp Expression Handling
 
-### Recordings on disk
-`mastering_output/{track_name}/` has WAV recordings for both the old per-loop approach and the new per-instrument approach. The instrument recordings are named `{synth_name}.wav` or `sample_{sample_name}.wav`.
+The parser handles all expression patterns found in the tracks:
 
-### CLI
+| Pattern | Transformation |
+|---------|---------------|
+| `amp: 0.18` | `amp: 0.18 * 0.85` |
+| `amp: amp_val` | `amp: amp_val * 0.85` |
+| `amp: amp_val * 0.5` | `amp: amp_val * 0.5 * 0.85` |
+| `amp: 0.18 * (0.5 + frac)` | `amp: 0.18 * (0.5 + frac) * 0.85` |
+| `amp: 0.08 + (h * 0.15)` | `amp: (0.08 + (h * 0.15)) * 0.6` |
+
+Rules:
+- Single token or multiply-only expressions: append `* factor`
+- Expressions with `+`/`-` at top level: wrap in parens first
+- Nested parens in function calls (e.g., `rrand(0.7, 1.0)`) are handled correctly
+- `with_fx` lines are skipped (not instrument calls)
+- Variable assignments (e.g., `vol = 0.08 + ...`) are skipped (no `amp:` keyword)
+- Lines already marked `# ~nf` are skipped (idempotent re-runs)
+
+### Normalization Table
+
+Saved to `mastering_output/normalization_table.json`:
+```json
+{
+  "target_lufs": -37.5,
+  "instrument_loudness": {"piano": -37.7, "sine": -26.6, ...},
+  "normalization_factors": {"piano": 0.97, "sine": 0.28, "hollow": 2.51, ...}
+}
 ```
-python -m mastering --track NAME     # single track
-python -m mastering --all            # all tracks
-python -m mastering --revert         # restore all from .bak
-python -m mastering --revert NAME    # restore one track
-
-Options:
-  --duration SECS        Recording duration per instrument (default: 5)
-  --target-lufs FLOAT    Target baseline LUFS (default: -23.0)
-  --max-range FLOAT      Cap corrections at this many dB (default: 12)
-  --threshold FLOAT      Skip corrections below this dB (default: 1.5)
-  --skip-record          Reuse existing WAVs, just re-analyze and apply
-  --no-apply             Analyze only, don't modify tracks
-  --output-dir DIR       Where to put WAVs and reports (default: mastering_output)
-```
-
-## What's Wrong
-
-The fundamental issue is that the correction logic doesn't account for the **authored amp values** already in the track. It only measures intrinsic instrument loudness and applies a flat correction per loop. This means:
-
-### 1. The correction ignores what the track author intended
-
-Oracle's `price_watch` uses `amp: 0.08-0.18` (deliberately quiet piano touches). The mastering pipeline sees "piano is intrinsically at -37.7 LUFS" and applies x3.98 to the entire loop. But the loop is already quiet *on purpose* — the x3.98 multiplier combines with the authored amps to produce distortion.
-
-The correction should be: `target / (intrinsic * authored_amp)`, not just `target / intrinsic`.
-
-### 2. Loops play notes differently than the test
-
-The test records `:piano` playing middle C once at `amp: 0.3`. But oracle's `price_watch` plays *multiple rapid notes* in quick succession with reverb — the cumulative energy is much higher than a single note. Similarly, poolside's `piano_chords` plays *chords* (multiple simultaneous notes), which are inherently louder than single notes.
-
-### 3. A flat target LUFS doesn't make sense for a mix
-
-Not every layer should be at the same volume. A kick at -23 LUFS and a hi-hat shimmer at -23 LUFS would be wrong — hats should be quieter. The corrections need to respect the **role** of each layer (foundation vs detail vs accent).
-
-### 4. Max-range cap creates a ceiling where everything gets the same correction
-
-With a 12 dB cap, most instruments end up capped at +12 dB, making the corrections nearly uniform. This defeats the purpose — it's just a global volume boost.
 
 ## Measured Instrument Loudness (at amp: 0.3)
-
-These are consistent across recording sessions:
 
 | Instrument | LUFS | Category |
 |---|---|---|
 | sine | -26.6 to -31.9 | Loud (varies by track BPM) |
 | sample:bd_haus | -30.4 to -37.4 | Loud |
-| sample:bd_fat | -43.4 | Medium |
 | tb303 | -34.4 to -35.4 | Medium |
 | saw | -34.9 to -36.1 | Medium |
 | sample:drum_tom_lo_hard | -35.8 | Medium |
 | sample:drum_cymbal_open | -36.6 | Medium |
 | sample:sn_dub | -37.1 | Medium |
 | piano | -37.7 to -39.0 | Medium |
+| sample:drum_cowbell | -33.6 | Medium |
 | blade | -39.6 | Medium-Quiet |
 | sample:drum_cymbal_hard | -40.1 | Medium-Quiet |
-| sample:drum_cowbell | -33.6 | Medium |
-| sample:drum_cymbal_soft | -44.8 | Quiet |
 | sample:bd_fat | -43.4 | Quiet |
+| sample:drum_cymbal_soft | -44.8 | Quiet |
 | sample:drum_cymbal_closed | -46.2 | Quiet |
 | pluck | -46.4 | Quiet |
 | hollow | -46.8 to -49.2 | Quiet |
@@ -101,33 +113,34 @@ These are consistent across recording sessions:
 | sample:vinyl_hiss | -64.4 | Very Quiet |
 | zpad | -120.0 | Broken (doesn't exist in Sonic Pi 4.6) |
 
-## What Needs to Change
+## CLI Reference
 
-The pipeline infrastructure (recording, analysis, apply) works fine. The **correction logic** needs rethinking. Possible approaches:
+```
+python -m mastering --all              # normalize all tracks
+python -m mastering --track NAME       # normalize one track
+python -m mastering --revert           # restore all from .bak
+python -m mastering --revert NAME      # restore one track
 
-### Option A: Correct the authored amps, not the loop
+Options:
+  --duration SECS        Recording duration per instrument (default: 5)
+  --skip-record          Reuse existing WAVs
+  --no-apply             Build table only, don't modify tracks
+  --output-dir DIR       Output directory (default: mastering_output)
+  --track-dir DIR        Directory with .rb files (default: sonic_pi)
+```
 
-Instead of wrapping the whole loop in `with_fx :level`, adjust the actual `amp:` values in the code. For each `play`/`sample`/`synth` call, multiply its amp by `(target / intrinsic_loudness)`. This normalizes the instrument while preserving the author's relative dynamics.
+## Files
 
-Problem: Parsing and rewriting Ruby amp expressions is fragile.
-
-### Option B: Build a loudness lookup table, use it when writing tracks
-
-Don't auto-correct existing tracks. Instead, provide a reference table that track authors use when setting amp values. If `:hollow` is 17 dB quieter than `:sine`, the author knows to use ~7x higher amp for hollow layers. This is a tool for humans, not an auto-fixer.
-
-### Option C: Record the actual mix, not isolated instruments
-
-Record each live_loop as it actually plays in the track (the old approach, with the correct amp values and data-driven behavior). Measure the actual loudness of each layer in context. Then correct the outliers — loops that are too loud or too quiet relative to the rest of the mix.
-
-Problem: This was the first approach attempted and had issues with conditional loops being silent under default data scenarios. Reference mode (normalizing amps) was tried to solve this but that removes the authored intent. Using `high_activity` data opens all gates but the amp values are still authored, so the measurement reflects authored intent + intrinsic loudness combined — which is actually what you want to measure.
-
-### Option D: Hybrid — normalize intrinsic loudness, then mix
-
-1. Use the measured intrinsic loudness table to compute a **per-instrument normalization factor** (so every instrument at `amp: 0.3` would produce the same LUFS).
-2. Bake this normalization into each `play`/`sample` call as a multiplier.
-3. Now the track author's `amp:` values directly control the mix balance, because all instruments have been leveled.
-
-This is the cleanest solution but requires rewriting amp values in the Ruby code.
+| File | Purpose |
+|---|---|
+| `mastering/cli.py` | CLI + global normalization table computation |
+| `mastering/apply.py` | Per-line amp factor injection |
+| `mastering/instruments.py` | Extracts instruments, generates test snippets |
+| `mastering/recorder.py` | Records via Sonic Pi headless |
+| `mastering/analyzer.py` | LUFS/RMS/spectral analysis |
+| `mastering/parser.py` | Parses .rb track files |
+| `mastering/solo_gen.py` | Generates per-loop solo snippets (unused by current pipeline) |
+| `mastering/reporter.py` | Balance reports (unused by current pipeline) |
 
 ## Dependencies
 
@@ -139,28 +152,9 @@ soundfile>=0.12.0
 numpy>=1.24.0
 ```
 
-## Files
-
-| File | Status | Purpose |
-|---|---|---|
-| `mastering/__init__.py` | Done | Package init |
-| `mastering/__main__.py` | Done | `python -m mastering` entry |
-| `mastering/cli.py` | Needs rework | CLI + correction logic |
-| `mastering/parser.py` | Done, solid | Parses .rb track files |
-| `mastering/instruments.py` | Done | Extracts instruments, generates test snippets |
-| `mastering/recorder.py` | Done | Records via Sonic Pi headless |
-| `mastering/analyzer.py` | Done | LUFS/RMS/spectral analysis |
-| `mastering/apply.py` | Done, may need rework | Applies `with_fx :level` corrections |
-| `mastering/solo_gen.py` | Done, unused by current pipeline | Generates per-loop solo snippets |
-| `mastering/reporter.py` | Done, unused by current pipeline | Text/JSON balance reports |
-| `mastering_output/` | Has recordings | WAVs + reports per track |
-| `.gitignore` | Updated | Excludes `mastering_output/` |
-| `requirements-mastering.txt` | Done | Extra deps for mastering |
-
 ## Known Issues
 
-- **Sonic Pi `recording_start` takes no args** — Sonic Pi 4.x saves to `%TEMP%/sonic-pi*/`. The recorder finds and moves the WAV after each recording. Need ~1.5s settle time between recordings or the file isn't found.
-- **`:zpad` synth doesn't exist** in Sonic Pi 4.6. `midnight_ticker`'s events loop references it — records as silence.
-- **`:spread` is a reserved word** in Sonic Pi's pre-parser. Comment lines containing the word `spread` trigger errors when sent via `run_code`. The recorder strips comments before sending.
-- **Samples could be analyzed from disk** instead of recording them through Sonic Pi. They're WAV files in the Sonic Pi install directory. This would save recording time and give more accurate measurements (no scsynth/recording chain in the way). Not implemented yet.
-- **Synth LUFS varies slightly by BPM** — `use_bpm` affects Sonic Pi's internal timing which can slightly change how scsynth renders the sound. Measured variance is ~1-2 dB.
+- **`:zpad` synth doesn't exist** in Sonic Pi 4.6. Records as silence, excluded from normalization (below -70 LUFS).
+- **LUFS varies slightly by BPM** — `use_bpm` affects timing, causing ~1-2 dB variance. The global table records without BPM context.
+- **Samples could be analyzed from disk** instead of recording through Sonic Pi. Not implemented yet.
+- **Factor cap limits very quiet instruments** — `dark_ambience` and `vinyl_hiss` are capped at 5.0x (+14 dB). At `amp: 0.3` they'll still be quieter than other instruments. The LLM author may need higher amp values for these.

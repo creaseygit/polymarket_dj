@@ -1,48 +1,57 @@
 """CLI entry point for the mastering pipeline.
 
-Simple approach:
-1. Find all unique synths/samples in a track
+Per-instrument normalization approach:
+1. Discover all unique synths/samples across all tracks
 2. Record each one playing a single note at a reference amp
 3. Measure LUFS — this is the instrument's intrinsic loudness
-4. Apply per-loop corrections so all instruments sit at the same level
+4. Compute a normalization factor per instrument (target = median LUFS)
+5. Multiply every amp: expression in the tracks by the factor
+
+Result: all instruments at amp: 0.3 produce the same perceived loudness.
+The LLM author's amp values then directly control relative mix balance.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import statistics
 from pathlib import Path
 
-from mastering.instruments import extract_instruments
+from mastering.instruments import extract_instruments, Instrument
 from mastering.recorder import MasteringRecorder
 from mastering.analyzer import analyze_wav
-from mastering.apply import apply_corrections, revert_track
+from mastering.apply import apply_normalization, revert_track
+
+
+# Factor bounds — prevent extreme corrections
+MAX_BOOST = 5.0   # +14 dB max boost
+MAX_CUT = 0.1     # -20 dB max cut
+# Skip factors close to unity
+SKIP_THRESHOLD = 0.02
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="mastering",
-        description="Balance Sonic Pi tracks by measuring intrinsic instrument loudness.",
+        description="Normalize Sonic Pi instrument loudness so amp: values "
+                    "directly control relative mix balance.",
     )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--track", type=str, help="Master a single track (e.g. poolside)")
-    group.add_argument("--all", action="store_true", help="Master all tracks in sonic_pi/")
+    group.add_argument("--track", type=str,
+                       help="Normalize a single track (e.g. poolside)")
+    group.add_argument("--all", action="store_true",
+                       help="Normalize all tracks in sonic_pi/")
     group.add_argument(
         "--revert", type=str, nargs="?", const="__all__",
-        help="Revert track(s) to pre-mastering backup.",
+        help="Revert track(s) to pre-normalization backup.",
     )
     parser.add_argument("--duration", type=float, default=5.0,
                         help="Recording duration per instrument (default: 5s)")
-    parser.add_argument("--target-lufs", type=float, default=-23.0,
-                        help="Target LUFS for the loudest instrument (default: -23.0)")
-    parser.add_argument("--max-range", type=float, default=12.0,
-                        help="Max allowed dB range between loudest and quietest (default: 12)")
-    parser.add_argument("--threshold", type=float, default=1.5,
-                        help="Skip corrections smaller than this dB (default: 1.5)")
     parser.add_argument("--skip-record", action="store_true",
-                        help="Skip recording, use existing WAVs")
+                        help="Skip recording, reuse existing WAVs")
     parser.add_argument("--no-apply", action="store_true",
-                        help="Analyze only, don't apply corrections")
+                        help="Build normalization table only, don't modify tracks")
     parser.add_argument("--output-dir", type=str, default="mastering_output",
                         help="Output directory (default: mastering_output)")
     parser.add_argument("--track-dir", type=str, default="sonic_pi",
@@ -50,139 +59,70 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def master_track(
-    track_path: str,
-    recorder: MasteringRecorder | None,
-    output_dir: str,
-    duration: float,
-    target_lufs: float,
-    max_range: float,
-    threshold: float,
-    skip_record: bool,
-    apply: bool,
-) -> None:
-    """Master a single track end-to-end."""
-    track_file = Path(track_path)
-    track_name = track_file.stem
+def discover_all_instruments(
+    track_dir: Path,
+) -> tuple[dict[str, Instrument], dict[str, dict[str, list[str]]]]:
+    """Discover all unique instruments across all tracks.
 
-    print(f"\n{'='*60}")
-    print(f"Mastering: {track_name}")
-    print(f"{'='*60}")
+    Returns:
+        (all_instruments, per_track_info)
+        - all_instruments: {name: Instrument} deduplicated across tracks
+        - per_track_info: {track_path: {loop_name: [instrument_names]}}
+    """
+    all_instruments: dict[str, Instrument] = {}
+    per_track: dict[str, dict[str, list[str]]] = {}
 
-    # 1. Extract instruments
-    parts, loop_instruments, instruments = extract_instruments(track_path)
-    print(f"\nFound {len(instruments)} unique instruments:")
-    for inst in instruments:
-        loops_using = [l for l, insts in loop_instruments.items() if inst.name in insts]
-        print(f"  {inst.name:25} used by: {', '.join(loops_using)}")
-
-    inst_dir = Path(output_dir) / track_name
-    inst_dir.mkdir(parents=True, exist_ok=True)
-
-    # 2. Record each instrument
-    if not skip_record:
-        if recorder is None:
-            raise RuntimeError("Recorder not initialized")
+    for rb_file in sorted(track_dir.glob("*.rb")):
+        _, loop_instruments, instruments = extract_instruments(str(rb_file))
+        per_track[str(rb_file)] = loop_instruments
         for inst in instruments:
-            wav_path = inst_dir / f"{inst.safe_name}.wav"
-            print(f"\n  Recording {inst.name}...")
-            await recorder.record_instrument(inst.test_code, wav_path, duration)
+            if inst.name not in all_instruments:
+                all_instruments[inst.name] = inst
 
-    # 3. Analyze each instrument
-    print(f"\nAnalyzing...")
-    loudness_table: dict[str, float] = {}  # instrument_name -> LUFS
+    return all_instruments, per_track
 
-    for inst in instruments:
-        wav_path = inst_dir / f"{inst.safe_name}.wav"
-        if not wav_path.exists():
-            print(f"  {inst.name}: NO RECORDING")
-            continue
-        analysis = analyze_wav(str(wav_path), track_name, inst.name)
-        loudness_table[inst.name] = analysis.integrated_lufs
-        print(f"  {inst.name:25} {analysis.integrated_lufs:>7.1f} LUFS  "
-              f"Peak: {analysis.peak_db:>6.1f} dB")
 
-    if not loudness_table:
-        print("No analysis results.")
-        return
+def compute_normalization(
+    loudness_table: dict[str, float],
+    max_boost: float = MAX_BOOST,
+    max_cut: float = MAX_CUT,
+) -> dict[str, float]:
+    """Compute per-instrument normalization factors.
 
-    # 4. Compute per-loop corrections
-    # Each instrument is normalized to target_lufs — a fixed global baseline.
-    # Loud instruments get cut, quiet ones get boosted.
+    Target = median LUFS of all valid instruments. This minimizes the
+    total magnitude of corrections.
+
+    Args:
+        loudness_table: {instrument_name: measured_lufs}
+        max_boost: Maximum boost factor (default 5.0 = +14 dB)
+        max_cut: Minimum cut factor (default 0.1 = -20 dB)
+
+    Returns:
+        {instrument_name: factor} where factor * amp gives normalized loudness.
+    """
+    # Filter out silence / broken instruments
     valid = {k: v for k, v in loudness_table.items() if v > -70}
     if not valid:
-        print("All instruments below -70 LUFS, nothing to correct.")
-        return
+        return {}
 
-    print(f"\n  Target baseline: {target_lufs:.1f} LUFS")
-    print(f"\nPer-loop corrections:")
+    # Target = median LUFS
+    target = statistics.median(valid.values())
 
-    # Build correction per loop based on its primary instrument
-    loop_corrections: dict[str, dict] = {}
+    factors: dict[str, float] = {}
+    for name, lufs in valid.items():
+        correction_db = target - lufs
+        factor = 10.0 ** (correction_db / 20.0)
+        factor = max(max_cut, min(factor, max_boost))
+        factors[name] = round(factor, 2)
 
-    for loop_name, inst_names in loop_instruments.items():
-        # Use the loudest instrument in this loop as the reference
-        loop_lufs_values = [loudness_table.get(i) for i in inst_names if i in loudness_table]
-        loop_lufs_values = [v for v in loop_lufs_values if v is not None and v > -70]
-
-        if not loop_lufs_values:
-            print(f"  {loop_name:20} -- no measured instrument, skipping")
-            continue
-
-        loop_lufs = max(loop_lufs_values)
-
-        # Simple: correct to the fixed baseline
-        correction_db = target_lufs - loop_lufs
-
-        # Cap extreme corrections — instruments more than max_range below
-        # the baseline are inherently quiet by design (e.g. vinyl_hiss).
-        # Don't boost them beyond max_range dB.
-        if correction_db > max_range:
-            correction_db = max_range
-
-        multiplier = 10.0 ** (correction_db / 20.0)
-
-        if abs(correction_db) < threshold:
-            print(f"  {loop_name:20} {correction_db:+6.1f} dB  (skip, below threshold)")
-            continue
-
-        loop_corrections[loop_name] = {
-            "loop_name": loop_name,
-            "correction_db": round(correction_db, 1),
-            "suggested_amp_multiplier": round(multiplier, 2),
-            "instrument": inst_names[0] if inst_names else "?",
-            "instrument_lufs": round(loop_lufs, 1),
-        }
-        direction = "boost" if correction_db > 0 else "cut"
-        print(f"  {loop_name:20} {correction_db:+6.1f} dB  x{multiplier:.2f}  "
-              f"({inst_names[0]}: {loop_lufs:.1f} LUFS)")
-
-    # Save report
-    report = {
-        "track_name": track_name,
-        "target_lufs": target_lufs,
-        "instrument_loudness": {k: round(v, 1) for k, v in loudness_table.items()},
-        "loop_corrections": loop_corrections,
-    }
-    report_path = inst_dir / "report.json"
-    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(f"\n  Report: {report_path}")
-
-    # 5. Apply corrections
-    if apply and loop_corrections:
-        print(f"\nApplying corrections to {track_name}...")
-        apply_corrections(
-            track_path=track_path,
-            report_path=str(report_path),
-            threshold_db=threshold,
-        )
+    return factors
 
 
 async def main():
     args = parse_args()
     track_dir = Path(args.track_dir)
 
-    # Revert mode
+    # --- Revert mode ---
     if args.revert is not None:
         if args.revert == "__all__":
             for rb in sorted(track_dir.glob("*.rb")):
@@ -191,34 +131,114 @@ async def main():
             revert_track(str(track_dir / f"{args.revert}.rb"))
         return
 
-    # Discover tracks
+    # --- Discover tracks to process ---
     if args.track:
-        tracks = [track_dir / f"{args.track}.rb"]
-        if not tracks[0].exists():
-            print(f"Track not found: {tracks[0]}")
+        target_track = track_dir / f"{args.track}.rb"
+        if not target_track.exists():
+            print(f"Track not found: {target_track}")
             return
+        apply_tracks = [target_track]
     else:
-        tracks = sorted(track_dir.glob("*.rb"))
+        apply_tracks = sorted(track_dir.glob("*.rb"))
 
-    # Boot recorder once
+    # --- Step 1: Discover ALL instruments across ALL tracks ---
+    # (global table ensures consistency — piano gets the same factor everywhere)
+    print("Discovering instruments across all tracks...")
+    all_instruments, per_track = discover_all_instruments(track_dir)
+
+    print(f"\nFound {len(all_instruments)} unique instruments:")
+    for name in sorted(all_instruments):
+        # Find which tracks use this instrument
+        tracks_using = []
+        for tp, loops in per_track.items():
+            for loop_name, inst_names in loops.items():
+                if name in inst_names:
+                    tracks_using.append(Path(tp).stem)
+                    break
+        print(f"  {name:30} used by: {', '.join(tracks_using)}")
+
+    inst_dir = Path(args.output_dir) / "_instruments"
+    inst_dir.mkdir(parents=True, exist_ok=True)
+
+    # --- Step 2: Record each unique instrument ---
     recorder = None
     if not args.skip_record:
         recorder = MasteringRecorder(output_dir=args.output_dir)
         await recorder._ensure_booted()
 
     try:
-        for track_path in tracks:
-            await master_track(
-                track_path=str(track_path),
-                recorder=recorder,
-                output_dir=args.output_dir,
-                duration=args.duration,
-                target_lufs=args.target_lufs,
-                max_range=args.max_range,
-                threshold=args.threshold,
-                skip_record=args.skip_record,
-                apply=not args.no_apply,
-            )
+        if not args.skip_record:
+            print(f"\nRecording {len(all_instruments)} instruments...")
+            for inst in all_instruments.values():
+                wav_path = inst_dir / f"{inst.safe_name}.wav"
+                print(f"\n  Recording {inst.name}...")
+                await recorder.record_instrument(inst.test_code, wav_path, args.duration)
+
+        # --- Step 3: Analyze ---
+        print(f"\nAnalyzing instrument loudness...")
+        loudness_table: dict[str, float] = {}
+
+        for inst in all_instruments.values():
+            wav_path = inst_dir / f"{inst.safe_name}.wav"
+            if not wav_path.exists():
+                print(f"  {inst.name:30} NO RECORDING")
+                continue
+            analysis = analyze_wav(str(wav_path), "_global", inst.name)
+            loudness_table[inst.name] = analysis.integrated_lufs
+            print(f"  {inst.name:30} {analysis.integrated_lufs:>7.1f} LUFS  "
+                  f"Peak: {analysis.peak_db:>6.1f} dB")
+
+        if not loudness_table:
+            print("No analysis results.")
+            return
+
+        # --- Step 4: Compute normalization factors ---
+        valid = {k: v for k, v in loudness_table.items() if v > -70}
+        if not valid:
+            print("All instruments below -70 LUFS, nothing to normalize.")
+            return
+
+        target = statistics.median(valid.values())
+        norm_table = compute_normalization(loudness_table)
+
+        print(f"\n{'='*60}")
+        print(f"Normalization Table  (target: {target:.1f} LUFS)")
+        print(f"{'='*60}")
+        print(f"  {'Instrument':30} {'LUFS':>8}  {'Factor':>8}  {'dB':>7}  Note")
+
+        for name in sorted(norm_table, key=lambda n: loudness_table.get(n, -999), reverse=True):
+            factor = norm_table[name]
+            lufs = loudness_table[name]
+            db = 20 * (factor and __import__('math').log10(factor) or 0)
+            note = ""
+            if factor >= MAX_BOOST:
+                note = "(capped boost)"
+            elif factor <= MAX_CUT:
+                note = "(capped cut)"
+            elif abs(factor - 1.0) <= SKIP_THRESHOLD:
+                note = "(~unity, skipped)"
+            print(f"  {name:30} {lufs:>7.1f}  x{factor:>6.2f}  {db:>+6.1f}  {note}")
+
+        # Save normalization table
+        table_data = {
+            "target_lufs": round(target, 1),
+            "instrument_loudness": {k: round(v, 1) for k, v in loudness_table.items()},
+            "normalization_factors": norm_table,
+        }
+        table_path = Path(args.output_dir) / "normalization_table.json"
+        table_path.parent.mkdir(parents=True, exist_ok=True)
+        table_path.write_text(json.dumps(table_data, indent=2), encoding="utf-8")
+        print(f"\n  Saved: {table_path}")
+
+        # --- Step 5: Apply to tracks ---
+        if not args.no_apply:
+            print(f"\nApplying normalization to {len(apply_tracks)} track(s)...")
+            for track_path in apply_tracks:
+                print(f"\n  --- {track_path.stem} ---")
+                apply_normalization(str(track_path), norm_table)
+        else:
+            print("\n  --no-apply: skipping track modification")
+
     finally:
         if recorder:
             await recorder.shutdown()
