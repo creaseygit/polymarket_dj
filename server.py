@@ -30,7 +30,10 @@ from polymarket.websocket import PolymarketFeed
 from mixer.mixer import AutonomousDJ
 from osc.bridge import OSCBridge, _scale
 from sonic_pi.headless import SonicPiHeadless
-from config import RESCORE_INTERVAL, BROWSE_CATEGORIES
+from config import (
+    RESCORE_INTERVAL, BROWSE_CATEGORIES,
+    DEFAULT_SENSITIVITY, EVENT_HEAT_THRESHOLD, EVENT_PRICE_THRESHOLD,
+)
 
 
 # ── Global state ──────────────────────────────────────────
@@ -48,6 +51,7 @@ class AppState:
         self.tracks = self._find_tracks()
 
         self.master_volume = 0.7
+        self.sensitivity = DEFAULT_SENSITIVITY
 
         # Background tasks
         self._feed_task = None
@@ -144,6 +148,7 @@ class AppState:
             "pinned": self.dj.pinned_slug if self.dj else None,
             "current_market": market_info,
             "event_rate": self._get_event_rate(),
+            "sensitivity": self.sensitivity,
         }
 
     @staticmethod
@@ -185,6 +190,19 @@ async def dj_loop():
         pass
 
 
+def _sensitivity_exponent(s: float) -> float:
+    """Map sensitivity slider 0-1 to power curve exponent.
+    s=0.0 → 4.0 (crushes small values), s=0.5 → 1.0 (linear), s=1.0 → 0.25 (inflates)."""
+    return 4.0 ** (1.0 - 2.0 * s)
+
+
+def _apply_sensitivity(value: float, exponent: float) -> float:
+    """Apply power curve: value^exponent, clamped 0-1."""
+    if value <= 0.0:
+        return 0.0
+    return max(0.0, min(1.0, value ** exponent))
+
+
 async def param_push_loop(interval=3.0):
     """Push raw normalized market data to Sonic Pi. Tracks interpret it themselves."""
     try:
@@ -213,6 +231,13 @@ async def param_push_loop(interval=3.0):
                 trade_rate_n = max(0.0, min(1.0, rate))
                 spread_n = _scale(spread, 0, 0.3, 0.0, 1.0)
 
+                # ── Sensitivity curve ─────────────────────────
+                sens_exp = _sensitivity_exponent(state.sensitivity)
+                heat_n = _apply_sensitivity(heat_n, sens_exp)
+                velocity_n = _apply_sensitivity(velocity_n, sens_exp)
+                trade_rate_n = _apply_sensitivity(trade_rate_n, sens_exp)
+                spread_n = _apply_sensitivity(spread_n, sens_exp)
+
                 # Tone with hysteresis — prevent flickering near 0.50
                 if state._current_tone == 1 and last_price < 0.45:
                     state._current_tone = 0
@@ -229,18 +254,25 @@ async def param_push_loop(interval=3.0):
                     state._prev_price = last_price
                     state._current_tone = 1 if last_price > 0.5 else 0
 
-                # ── Event detection ──────────────────────────
+                # ── Event detection + price delta ─────────────
                 event_code = ""
+                price_delta_n = 0.0
                 if not is_rotation:
                     heat_delta = abs(heat - state._prev_heat)
-                    price_delta = abs(last_price - state._prev_price)
-                    if heat_delta > 0.15:
+                    raw_price_delta = last_price - state._prev_price
+                    abs_price_delta = abs(raw_price_delta)
+                    if heat_delta > EVENT_HEAT_THRESHOLD * sens_exp:
                         event_code += "set :event_spike, 1\n"
-                    if price_delta > 0.03:
-                        direction = 1 if last_price > state._prev_price else -1
+                    if abs_price_delta > EVENT_PRICE_THRESHOLD * sens_exp:
+                        direction = 1 if raw_price_delta > 0 else -1
                         event_code += f"set :event_price_move, {direction}\n"
                     if event_code:
-                        print(f"[EVENT] heat_delta={heat_delta:.3f} price_delta={price_delta:.4f}", flush=True)
+                        print(f"[EVENT] heat_delta={heat_delta:.3f} price_delta={abs_price_delta:.4f}", flush=True)
+                    # Sensitivity-adjusted price delta (-1 to +1)
+                    sign = 1.0 if raw_price_delta >= 0 else -1.0
+                    mag = min(1.0, abs_price_delta / 0.10)  # normalize: 10¢ → 1.0
+                    mag = _apply_sensitivity(mag, sens_exp)
+                    price_delta_n = sign * mag
                 state._prev_heat = heat
                 state._prev_price = last_price
 
@@ -252,10 +284,12 @@ async def param_push_loop(interval=3.0):
                 code = event_code
                 code += f"set :heat, {heat_n:.4f}\n"
                 code += f"set :price, {price_n:.4f}\n"
+                code += f"set :price_delta, {price_delta_n:.4f}\n"
                 code += f"set :velocity, {velocity_n:.4f}\n"
                 code += f"set :trade_rate, {trade_rate_n:.4f}\n"
                 code += f"set :spread, {spread_n:.4f}\n"
                 code += f"set :tone, {tone}\n"
+                code += f"set :sensitivity, {state.sensitivity:.4f}\n"
 
                 try:
                     await state.sonic.run_code(code)
@@ -575,6 +609,15 @@ async def handle_volume(request):
     return web.json_response({"error": "Audio not running"}, status=400)
 
 
+async def handle_sensitivity(request):
+    """Set market sensitivity (0.0 = least reactive, 1.0 = most reactive)."""
+    data = await request.json()
+    sens = data.get("sensitivity", DEFAULT_SENSITIVITY)
+    sens = max(0.0, min(1.0, float(sens)))
+    state.sensitivity = sens
+    return web.json_response({"ok": True, "sensitivity": sens})
+
+
 async def handle_browse(request):
     """Browse markets by category."""
     import polymarket.gamma as gamma_module
@@ -621,8 +664,9 @@ async def handle_categories(request):
 
 # ── Track analyzer ───────────────────────────────────────
 
-_DATA_PARAMS = {"heat", "price", "velocity", "trade_rate", "spread", "tone",
-                "event_spike", "event_price_move", "market_resolved", "ambient_mode"}
+_DATA_PARAMS = {"heat", "price", "price_delta", "velocity", "trade_rate", "spread",
+                "tone", "event_spike", "event_price_move", "market_resolved",
+                "ambient_mode", "sensitivity"}
 
 def analyze_track(track_path: str) -> list[dict]:
     """Parse a .rb track file and extract live_loop names + which get() params each reads."""
@@ -769,6 +813,9 @@ async def handle_sandbox_push(request):
     if "event_price_move" in data:
         val = int(data["event_price_move"])
         code += f"set :event_price_move, {val}\n"
+    if "price_delta" in data:
+        val = max(-1.0, min(1.0, float(data["price_delta"])))
+        code += f"set :price_delta, {val:.4f}\n"
     if "market_resolved" in data:
         val = int(data["market_resolved"])
         code += f"set :market_resolved, {val}\n"
@@ -811,7 +858,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
 
   .audio-grid {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto 1fr auto auto;
     gap: 0 16px;
     align-items: center;
   }
@@ -820,6 +867,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
   .audio-track { display: flex; flex-direction: column; gap: 4px; justify-self: end; }
   .audio-track select { min-width: 150px; }
   .audio-volume { display: flex; flex-direction: column; gap: 4px; }
+  .audio-sensitivity { display: flex; flex-direction: column; gap: 4px; }
 
   .row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
 
@@ -981,6 +1029,13 @@ HTML_PAGE = r"""<!DOCTYPE html>
           <span id="volume-label" style="color:#00aaff; font-size:12px; min-width:30px;">70%</span>
         </div>
       </div>
+      <div class="audio-sensitivity">
+        <label style="color:#555; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">Sensitivity</label>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input type="range" id="sensitivity-slider" min="0" max="100" value="50" style="width:100px;" oninput="onSensitivityChange(this.value)">
+          <span id="sensitivity-label" style="color:#ff9900; font-size:12px; min-width:30px;">50%</span>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1079,6 +1134,17 @@ function onVolumeChange(rawVal) {
   if (volumeTimer) clearTimeout(volumeTimer);
   volumeTimer = setTimeout(async () => {
     await api('/api/volume', 'POST', {volume: pct / 100});
+  }, 200);
+}
+
+// ── Sensitivity ──
+let sensTimer = null;
+function onSensitivityChange(rawVal) {
+  const pct = parseInt(rawVal);
+  document.getElementById('sensitivity-label').textContent = pct + '%';
+  if (sensTimer) clearTimeout(sensTimer);
+  sensTimer = setTimeout(async () => {
+    await api('/api/sensitivity', 'POST', {sensitivity: pct / 100});
   }, 200);
 }
 
@@ -1230,6 +1296,16 @@ function updateUI(s) {
   }
   if (s.current_track && sel.value !== s.current_track) {
     sel.value = s.current_track;
+  }
+
+  // Sync sensitivity slider from server state (on page load)
+  if (s.sensitivity !== undefined) {
+    const sensSlider = document.getElementById('sensitivity-slider');
+    const sensPct = Math.round(s.sensitivity * 100);
+    if (!sensTimer && parseInt(sensSlider.value) !== sensPct) {
+      sensSlider.value = sensPct;
+      document.getElementById('sensitivity-label').textContent = sensPct + '%';
+    }
   }
 
   document.getElementById('feed-dot').className = 'dot ' + (s.feed_running ? 'dot-on' : 'dot-off');
@@ -1447,6 +1523,10 @@ SANDBOX_PAGE = r"""<!DOCTYPE html>
           <div class="slider-label"><span class="slider-name">Spread</span><span class="slider-value" id="val-spread">0.20</span></div>
           <input type="range" id="sl-spread" min="0" max="100" value="20" oninput="onSlider('spread',this.value)">
         </div>
+        <div class="slider-group">
+          <div class="slider-label"><span class="slider-name">Price Delta</span><span class="slider-value" id="val-price_delta">0.00</span></div>
+          <input type="range" id="sl-price_delta" min="-100" max="100" value="0" oninput="onSliderSigned('price_delta',this.value)">
+        </div>
 
         <h3>Tone</h3>
         <div class="toggle-row">
@@ -1599,6 +1679,12 @@ function onSlider(param, rawVal) {
   schedulePush(param, parseFloat(val));
   highlightActiveParams();
 }
+function onSliderSigned(param, rawVal) {
+  const val = (rawVal / 100).toFixed(2);
+  document.getElementById('val-' + param).textContent = val;
+  schedulePush(param, parseFloat(val));
+  highlightActiveParams();
+}
 
 function schedulePush(key, val) {
   pendingPush[key] = val;
@@ -1621,6 +1707,7 @@ function pushAllSliders() {
   params.forEach(p => {
     data[p] = parseInt(document.getElementById('sl-' + p).value) / 100;
   });
+  data.price_delta = parseInt(document.getElementById('sl-price_delta').value) / 100;
   // Include tone
   data.tone = document.getElementById('tone-1').classList.contains('active') ? 1 : 0;
   data.ambient_mode = document.getElementById('ambient-1').classList.contains('active') ? 1 : 0;
@@ -1667,11 +1754,11 @@ async function fireEvent(key, val) {
 
 // ── Presets ──
 const PRESETS = {
-  calm:     { heat: 15, price: 50, velocity: 5,  trade_rate: 10, spread: 10 },
-  moderate: { heat: 45, price: 55, velocity: 25, trade_rate: 40, spread: 20 },
-  intense:  { heat: 85, price: 70, velocity: 60, trade_rate: 80, spread: 40 },
-  zero:     { heat: 0,  price: 0,  velocity: 0,  trade_rate: 0,  spread: 0  },
-  max:      { heat: 100, price: 100, velocity: 100, trade_rate: 100, spread: 100 },
+  calm:     { heat: 15, price: 50, velocity: 5,  trade_rate: 10, spread: 10, price_delta: 0 },
+  moderate: { heat: 45, price: 55, velocity: 25, trade_rate: 40, spread: 20, price_delta: 20 },
+  intense:  { heat: 85, price: 70, velocity: 60, trade_rate: 80, spread: 40, price_delta: 60 },
+  zero:     { heat: 0,  price: 0,  velocity: 0,  trade_rate: 0,  spread: 0,  price_delta: 0 },
+  max:      { heat: 100, price: 100, velocity: 100, trade_rate: 100, spread: 100, price_delta: 100 },
 };
 
 function applyPreset(name) {
@@ -1709,8 +1796,9 @@ function renderInstrumentMap() {
     return;
   }
 
-  const allParams = ['heat', 'price', 'velocity', 'trade_rate', 'spread', 'tone',
-                     'event_spike', 'event_price_move', 'market_resolved', 'ambient_mode'];
+  const allParams = ['heat', 'price', 'price_delta', 'velocity', 'trade_rate', 'spread',
+                     'tone', 'event_spike', 'event_price_move', 'market_resolved',
+                     'ambient_mode', 'sensitivity'];
 
   // Get current slider values to highlight which params are "active" (non-zero)
   const activeParams = getActiveParams();
@@ -1818,6 +1906,7 @@ def create_app():
     app.router.add_post("/api/unpin", handle_unpin)
     app.router.add_post("/api/kill-all", handle_kill_all)
     app.router.add_post("/api/volume", handle_volume)
+    app.router.add_post("/api/sensitivity", handle_sensitivity)
     app.router.add_get("/api/browse", handle_browse)
     app.router.add_get("/api/categories", handle_categories)
     app.router.add_get("/api/track/analyze", handle_track_analyze)

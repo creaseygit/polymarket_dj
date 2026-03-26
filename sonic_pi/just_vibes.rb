@@ -11,12 +11,11 @@ set :event_spike, 0
 set :event_price_move, 0
 set :market_resolved, 0
 set :ambient_mode, 0
+set :price_delta, 0.0
+set :sensitivity, 0.5
 
 set_volume! 0.7
 use_bpm 75
-
-prev_price = 0.5
-last_delta = 0.0
 
 define :lofi_roots do
   t = get(:tone)
@@ -178,18 +177,15 @@ live_loop :deep_echo do
 end
 
 live_loop :price_drift do
-  p_now = get(:price)
-  raw_delta = p_now - prev_price
-  mag = raw_delta.abs
-  prev_price = p_now
-  last_delta = raw_delta
-  if mag > 0.02
+  pd = get(:price_delta)
+  mag = pd.abs
+  if mag > 0.2
     t = get(:tone)
     sc = t == 1 ? scale(:f4, :major_pentatonic, num_octaves: 2) :
       scale(:d4, :minor_pentatonic, num_octaves: 2)
-    num = [[2 + (mag * 15).to_i, 2].max, 5].min
-    vol = [[0.04 + (mag * 0.5), 0.04].max, 0.11].min
-    ns = raw_delta > 0 ? sc.take(num) : sc.take(num).reverse
+    num = [[2 + (mag * 5).to_i, 2].max, 5].min
+    vol = [[0.04 + (mag * 0.1), 0.04].max, 0.11].min
+    ns = pd > 0 ? sc.take(num) : sc.take(num).reverse
     use_synth :piano
     with_fx :reverb, room: 0.9, damp: 0.4, mix: 0.75 do
       with_fx :lpf, cutoff: 82 do

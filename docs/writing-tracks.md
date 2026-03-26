@@ -7,6 +7,7 @@ New `.rb` files in `sonic_pi/` are auto-discovered by the web UI. A track must:
 ```ruby
 set :heat, 0.4
 set :price, 0.5
+set :price_delta, 0.0
 set :velocity, 0.2
 set :trade_rate, 0.3
 set :spread, 0.2
@@ -15,9 +16,10 @@ set :event_spike, 0
 set :event_price_move, 0
 set :market_resolved, 0
 set :ambient_mode, 0
+set :sensitivity, 0.5
 ```
 
-2. **Read raw data** with `get(:heat)`, `get(:price)`, etc. in live_loops. Python pushes new values every 3s via `run_code`/`set` — they take effect on next `get()`.
+2. **Read data** with `get(:heat)`, `get(:price)`, etc. in live_loops. Python pushes new values every 3s via `run_code`/`set` — they take effect on next `get()`. Activity metrics (heat, velocity, trade_rate, spread) are **pre-adjusted by the user's sensitivity setting** — tracks don't need to handle sensitivity themselves. Optionally read `get(:sensitivity)` (0.0–1.0) for custom sensitivity-aware behavior.
 
 3. **Map data to music however you want.** The track is the artist's canvas:
    - Any number of instruments/layers

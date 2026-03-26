@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A DJ that turns Polymarket prediction market activity into generative music via Sonic Pi. Python scores markets by real-time heat, normalizes data to 0–1 ranges, and pushes raw values to Sonic Pi. Each track (.rb file) is a self-contained musical interpretation of the data — **no Python changes needed to add new tracks**.
+A DJ that turns Polymarket prediction market activity into generative music via Sonic Pi. Python scores markets by real-time heat, normalizes data to 0–1 ranges, applies a user-controlled **sensitivity curve**, and pushes adjusted values to Sonic Pi. Each track (.rb file) is a self-contained musical interpretation of the data — **no Python changes needed to add new tracks**.
 
 **Repo:** https://github.com/creaseygit/polymarket_dj
 
@@ -35,7 +35,7 @@ Polymarket APIs → Python (data layer) → Sonic Pi (music layer) → Audio Out
 2. `polymarket/websocket.py` — WebSocket subscribes to asset IDs, receives price changes/trades/book updates
 3. `polymarket/scorer.py` — `MarketScorer` computes heat score (0-1) from price velocity, trade rate, volume, spread
 4. `mixer/mixer.py` — `AutonomousDJ` manages which market to play. Always selects the primary (Yes/Up) outcome via `_primary_asset()`. Auto-rotates live finance markets when they expire
-5. `server.py` `param_push_loop` — Normalizes raw data to 0–1 and pushes to Sonic Pi every 3s
+5. `server.py` `param_push_loop` — Normalizes raw data to 0–1, applies sensitivity power curve (`4^(1-2s)`) to activity metrics + price delta, scales event thresholds, and pushes to Sonic Pi every 3s
 6. `sonic_pi/headless.py` — Boots Sonic Pi daemon without GUI, sends code via OSC
 7. Track `.rb` files — Self-contained musical interpretations that read raw data via `get()`
 
@@ -44,7 +44,7 @@ Polymarket APIs → Python (data layer) → Sonic Pi (music layer) → Audio Out
 | File                      | Purpose                                                                                                                                                             |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `server.py`               | **Main entry point** (~1750 lines). Web server, background loops (data push, price poll), all API handlers, full HTML UI (main page + sandbox page), track analyzer |
-| `config.py`               | All tunable constants (API URLs, scoring weights, OSC config, `BROWSE_CATEGORIES`)                                                                                  |
+| `config.py`               | All tunable constants (API URLs, scoring weights, OSC config, sensitivity defaults, event thresholds, `BROWSE_CATEGORIES`)                                           |
 | `console.py`              | Rich debug console with logging wrappers (legacy, imports stale `SLOT_OSC_MAP`)                                                                                     |
 | `polymarket/gamma.py`     | Gamma REST API client: `fetch_active_markets`, `fetch_browse_markets`, `fetch_market_by_slug`, `fetch_markets_by_event_slug`, `fetch_live_finance_markets`          |
 | `polymarket/websocket.py` | CLOB WebSocket feed. First message is a list (book snapshot), not a dict                                                                                            |

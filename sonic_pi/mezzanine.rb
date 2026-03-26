@@ -11,12 +11,11 @@ set :event_spike, 0
 set :event_price_move, 0
 set :market_resolved, 0
 set :ambient_mode, 0
+set :price_delta, 0.0
+set :sensitivity, 0.5
 
 set_volume! 0.7
 use_bpm 80
-
-prev_price = 0.5
-last_delta = 0.0
 
 # Teardrop-inspired: Am -> G -> F -> Am
 # tone=1 (bullish): brighter Am voicings
@@ -226,18 +225,15 @@ live_loop :deep_echo do
 end
 
 live_loop :price_drift do
-  p = get(:price)
-  raw_delta = p - prev_price
-  mag = raw_delta.abs
-  prev_price = p
-  last_delta = raw_delta
-  if mag > 0.05
+  pd = get(:price_delta)
+  mag = pd.abs
+  if mag > 0.2
     t = get(:tone)
     sc = t == 1 ? scale(:a4, :minor_pentatonic, num_octaves: 2) :
       scale(:a4, :minor_pentatonic, num_octaves: 2)
-    num = [[2 + (mag * 20).to_i, 2].max, 6].min
-    vol = [[0.04 + (mag * 0.6), 0.04].max, 0.14].min
-    ns = raw_delta > 0 ? sc.take(num) : sc.take(num).reverse
+    num = [[2 + (mag * 6).to_i, 2].max, 6].min
+    vol = [[0.04 + (mag * 0.12), 0.04].max, 0.14].min
+    ns = pd > 0 ? sc.take(num) : sc.take(num).reverse
     use_synth :pluck
     with_fx :reverb, room: 0.9, damp: 0.4, mix: 0.75 do
       with_fx :echo, phase: 0.5, decay: 5, mix: 0.5 do
@@ -258,11 +254,12 @@ live_loop :event_move do
   pm = get(:event_price_move)
   if pm != 0
     set :event_price_move, 0
-    mag = last_delta.abs
+    pd = get(:price_delta)
+    mag = pd.abs
     t = get(:tone)
     sc = scale(:a4, :minor, num_octaves: 2)
-    num = [[3 + (mag * 30).to_i, 3].max, 7].min
-    vol = [[0.04 + (mag * 0.6), 0.04].max, 0.1].min
+    num = [[3 + (mag * 7).to_i, 3].max, 7].min
+    vol = [[0.04 + (mag * 0.12), 0.04].max, 0.1].min
     ns = pm > 0 ? sc.take(num) : sc.take(num).reverse
     use_synth :piano
     with_fx :reverb, room: 0.92, damp: 0.35, mix: 0.8 do

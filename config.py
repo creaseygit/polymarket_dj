@@ -20,6 +20,11 @@ WEIGHT_SPREAD         = 0.10
 # Minimum trade events per minute to be considered "alive"
 MIN_TRADE_RATE     = 2
 
+# ── Sensitivity ─────────────────────────────────────────
+DEFAULT_SENSITIVITY    = 0.5       # 0.0 (least reactive) → 1.0 (most reactive)
+EVENT_HEAT_THRESHOLD   = 0.15      # heat delta to fire :event_spike
+EVENT_PRICE_THRESHOLD  = 0.03      # price delta (¢) to fire :event_price_move
+
 # ── OSC ──────────────────────────────────────────────────
 OSC_IP   = "127.0.0.1"
 OSC_PORT = 4560
