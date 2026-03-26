@@ -13,11 +13,11 @@ class AutonomousDJ:
     until another is selected.
     """
 
-    def __init__(self, scorer, feed, osc_bridge, gamma):
+    def __init__(self, scorer, feed, gamma, on_event=None):
         self.scorer     = scorer
         self.feed       = feed
-        self.osc        = osc_bridge
         self.gamma      = gamma
+        self.on_event   = on_event    # async callback: on_event(event_type, data)
 
         self.current_market = None
         self.current_asset  = None
@@ -135,7 +135,8 @@ class AutonomousDJ:
         print("[DJ] Ambient mode -- no hot markets", flush=True)
         self.current_market = None
         self.current_asset = None
-        self.osc.send_global("ambient_mode", 1)
+        if self.on_event:
+            asyncio.ensure_future(self.on_event("ambient_mode", {"value": 1}))
 
     def _find_market(self, asset_id: str) -> dict | None:
         for m in self.all_markets:
@@ -240,7 +241,9 @@ class AutonomousDJ:
         question = msg.get("question", "A market")
         print(f"[RESOLVED] {question} -> {winning}", flush=True)
 
-        self.osc.send_global("market_resolved", 1 if winning == "Yes" else -1)
+        result = 1 if winning == "Yes" else -1
+        if self.on_event:
+            asyncio.ensure_future(self.on_event("resolved", {"result": result}))
 
         resolved_ids = set(msg.get("assets_ids", []))
         if self.current_asset in resolved_ids:

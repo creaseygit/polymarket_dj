@@ -1,0 +1,92 @@
+"""
+Per-client session management for multi-user WebSocket connections.
+
+Each browser client gets a ClientSession with independent market selection,
+sensitivity, and event detection state. SessionManager coordinates shared
+Polymarket WebSocket subscriptions via reference counting.
+"""
+import uuid
+from aiohttp import web
+
+
+class ClientSession:
+    """State for a single connected browser client."""
+
+    def __init__(self, ws: web.WebSocketResponse):
+        self.client_id = uuid.uuid4().hex[:12]
+        self.ws = ws
+        self.market_slug: str | None = None
+        self.asset_id: str | None = None
+        self.market: dict | None = None       # full market dict
+        self.track: str = "mezzanine"
+        self.sensitivity: float = 0.5
+
+        # Per-client event detection state (mirrors old AppState fields)
+        self._prev_heat: float = 0.0
+        self._prev_price: float = 0.5
+        self._prev_asset: str | None = None
+        self._current_tone: int = 1           # 1=bullish, 0=bearish
+
+    def reset_event_state(self):
+        """Reset event baselines (e.g. after market switch)."""
+        self._prev_heat = 0.0
+        self._prev_price = 0.5
+        self._prev_asset = None
+        self._current_tone = 1
+
+
+class SessionManager:
+    """Manages all connected client sessions and shared market subscriptions."""
+
+    def __init__(self):
+        self.sessions: dict[str, ClientSession] = {}
+        # Reference counting: asset_id → set of client_ids watching it
+        self._market_watchers: dict[str, set[str]] = {}
+
+    def add(self, session: ClientSession):
+        self.sessions[session.client_id] = session
+
+    def remove(self, client_id: str) -> ClientSession | None:
+        session = self.sessions.pop(client_id, None)
+        if session and session.asset_id:
+            self._unwatch(client_id, session.asset_id)
+        return session
+
+    def get(self, client_id: str) -> ClientSession | None:
+        return self.sessions.get(client_id)
+
+    def watch_market(self, client_id: str, asset_id: str) -> bool:
+        """Register a client as watching an asset. Returns True if this is
+        the first watcher (caller should subscribe to Polymarket feed)."""
+        first = asset_id not in self._market_watchers or len(self._market_watchers[asset_id]) == 0
+        if asset_id not in self._market_watchers:
+            self._market_watchers[asset_id] = set()
+        self._market_watchers[asset_id].add(client_id)
+        return first
+
+    def _unwatch(self, client_id: str, asset_id: str) -> bool:
+        """Unregister a client. Returns True if no more watchers remain
+        (caller could unsubscribe from Polymarket feed)."""
+        watchers = self._market_watchers.get(asset_id)
+        if watchers:
+            watchers.discard(client_id)
+            if not watchers:
+                del self._market_watchers[asset_id]
+                return True
+        return False
+
+    def unwatch_market(self, client_id: str, asset_id: str) -> bool:
+        """Public unwatch. Returns True if no more watchers remain."""
+        return self._unwatch(client_id, asset_id)
+
+    def clients_watching(self, asset_id: str) -> set[str]:
+        """Return set of client_ids watching a given asset."""
+        return self._market_watchers.get(asset_id, set()).copy()
+
+    @property
+    def active_count(self) -> int:
+        return len(self.sessions)
+
+    def all_sessions(self):
+        """Iterate over all sessions (snapshot to avoid mutation during iteration)."""
+        return list(self.sessions.values())

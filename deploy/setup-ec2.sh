@@ -1,0 +1,36 @@
+#!/bin/bash
+# EC2 provisioning script for The Polymarket DJ
+# Run on a fresh Ubuntu 24.04 LTS instance in us-east-1
+set -euo pipefail
+
+echo "=== Installing system packages ==="
+sudo apt update
+sudo apt install -y python3.12 python3.12-venv nginx git
+
+echo "=== Cloning repository ==="
+sudo mkdir -p /opt/polymarket_dj
+sudo chown www-data:www-data /opt/polymarket_dj
+sudo -u www-data git clone https://github.com/creaseygit/polymarket_dj.git /opt/polymarket_dj
+
+echo "=== Setting up Python venv ==="
+cd /opt/polymarket_dj
+sudo -u www-data python3.12 -m venv venv
+sudo -u www-data venv/bin/pip install -r requirements.txt
+
+echo "=== Configuring Nginx ==="
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/polymarket-dj
+sudo ln -sf /etc/nginx/sites-available/polymarket-dj /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl restart nginx
+
+echo "=== Installing systemd service ==="
+sudo cp deploy/polymarket-dj.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable polymarket-dj
+sudo systemctl start polymarket-dj
+
+echo "=== Done ==="
+echo "Server running at http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):80"
+echo "Check status: sudo systemctl status polymarket-dj"
+echo "View logs: sudo journalctl -u polymarket-dj -f"

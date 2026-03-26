@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Polymarket DJ</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://unpkg.com/tone@15.0.4/build/Tone.js"></script>
+</head>
+<body>
+<div class="container">
+  <h1>THE POLYMARKET DJ</h1>
+  <div class="subtitle">Listen to the market move.</div>
+
+  <!-- Audio Engine -->
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Audio</h2>
+      <div class="audio-status">
+        <span class="dot" id="audio-dot"></span>
+        <span id="audio-label">Stopped</span>
+      </div>
+    </div>
+    <div class="audio-grid">
+      <div class="audio-controls">
+        <button onclick="startAudio()">Start</button>
+        <button class="danger" onclick="stopAudio()">Stop</button>
+      </div>
+      <div class="audio-track">
+        <label style="color:#555; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">Track</label>
+        <select id="track-select" onchange="onTrackChange()"></select>
+      </div>
+      <div class="audio-volume">
+        <label style="color:#555; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">Volume</label>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input type="range" id="volume-slider" min="0" max="100" value="70" style="width:100px;" oninput="onVolumeChange(this.value)">
+          <span id="volume-label" style="color:#00aaff; font-size:12px; min-width:30px;">70%</span>
+        </div>
+      </div>
+      <div class="audio-sensitivity">
+        <label style="color:#555; font-size:11px; text-transform:uppercase; letter-spacing:0.5px;">Sensitivity</label>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input type="range" id="sensitivity-slider" min="0" max="100" value="50" style="width:100px;" oninput="onSensitivityChange(this.value)">
+          <span id="sensitivity-label" style="color:#ff9900; font-size:12px; min-width:30px;">50%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Now Playing -->
+  <div class="now-playing" id="np" style="display:none">
+    <div class="np-header">
+      <div class="np-question" id="np-question"></div>
+      <a class="np-link" id="np-link" href="#" target="_blank" rel="noopener">View on Polymarket &#x2197;</a>
+    </div>
+    <div class="np-mood" id="np-mood"></div>
+    <div class="osc-grid" id="np-osc"></div>
+  </div>
+
+  <!-- Connection Status -->
+  <div class="panel">
+    <div class="row">
+      <span class="dot" id="ws-dot"></span>
+      <span id="ws-label">Connecting...</span>
+    </div>
+  </div>
+
+  <!-- Data Source -->
+  <div class="panel">
+    <h2>Data Source</h2>
+    <div class="url-row">
+      <input type="text" id="url-input" placeholder="Paste Polymarket URL to play..." onkeydown="if(event.key==='Enter')playUrl()">
+      <button onclick="playUrl()">Play URL</button>
+    </div>
+    <div class="url-status" id="url-status"></div>
+
+    <div style="margin-top:6px;">
+      <div id="browse-tabs" class="browse-tabs"></div>
+      <div id="browse-results" style="margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <div id="log"></div>
+
+  <div class="donate-footer">
+    Open source — <a href="https://github.com/creaseygit/polymarket_dj" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</div>
+
+<script src="/static/ws-client.js"></script>
+<script src="/static/audio-engine.js"></script>
+<script src="/static/tracks/oracle.js"></script>
+<script src="/static/tracks/mezzanine.js"></script>
+<script src="/static/tracks/just_vibes.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

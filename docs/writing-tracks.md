@@ -1,76 +1,82 @@
 # Writing Tracks
 
-New `.rb` files in `sonic_pi/` are auto-discovered by the web UI. A track must:
+Tracks are JavaScript files in `frontend/tracks/` that use Tone.js to generate audio in the browser. Each track is a class that receives market data and produces music.
 
-1. **Set defaults** so the track plays immediately without market data:
+## Track Interface
 
-```ruby
-set :heat, 0.4
-set :price, 0.5
-set :price_delta, 0.0
-set :velocity, 0.2
-set :trade_rate, 0.3
-set :spread, 0.2
-set :tone, 1
-set :event_spike, 0
-set :event_price_move, 0
-set :market_resolved, 0
-set :ambient_mode, 0
-set :sensitivity, 0.5
+```javascript
+class MyTrack {
+  constructor(destination)  // Create synths, loops, connect to Tone.js destination
+  start()                   // Start Tone.Transport and loops
+  stop()                    // Stop and dispose all synths/loops
+  update(data)              // Called every 3s with market data object
+  onEvent(type, msg)        // Handle one-shot events (spike, price_move, resolved)
+}
+
+// Register with the audio engine
+audioEngine.registerTrack('my_track', MyTrack);
 ```
 
-2. **Read data** with `get(:heat)`, `get(:price)`, etc. in live_loops. Python pushes new values every 3s via `run_code`/`set` — they take effect on next `get()`. Activity metrics (heat, velocity, trade_rate, spread) are **pre-adjusted by the user's sensitivity setting** — tracks don't need to handle sensitivity themselves. Optionally read `get(:sensitivity)` (0.0–1.0) for custom sensitivity-aware behavior.
+## Data Received
 
-3. **Map data to music however you want.** The track is the artist's canvas:
-   - Any number of instruments/layers
-   - Any mapping logic (heat → volume, price → pitch, trade_rate → rhythm density, etc.)
-   - Any genre, any structure
+The `update(data)` method receives:
+```javascript
+{
+  heat: 0.0-1.0,        // Composite market activity (sensitivity-adjusted)
+  price: 0.0-1.0,       // Current market price
+  price_delta: -1.0-1.0, // Signed per-cycle price change (sensitivity-adjusted)
+  velocity: 0.0-1.0,     // Price velocity (sensitivity-adjusted)
+  trade_rate: 0.0-1.0,   // Trades per minute (sensitivity-adjusted)
+  spread: 0.0-1.0,       // Bid-ask spread (sensitivity-adjusted)
+  tone: 0|1,             // 1=bullish/major, 0=bearish/minor
+  sensitivity: 0.0-1.0   // Raw sensitivity value (optional use)
+}
+```
 
-4. **Treat amp as relative volume** — the mastering pipeline normalizes all instruments to equal loudness, so `amp: 0.3` on any synth/sample produces the same perceived volume. Use `set_volume! 0.7` for master headroom, keep individual amps under 0.5. After writing a track, run `python -m mastering --all` to apply normalization factors.
+Activity metrics (heat, velocity, trade_rate, spread) are **pre-adjusted by the user's sensitivity setting** — tracks don't need to handle sensitivity themselves.
 
-5. **Keep the file concise** — under ~14KB raw. `run_file` strips comments automatically, but stay within budget
+## Events
 
-6. **Do not use Sonic Pi reserved names as variables** — e.g., `range`, `tick`, `ring`, `play`, `sample`, `sleep`
+The `onEvent(type, msg)` method handles one-shot events:
+- `type === 'spike'` — Heat delta exceeded threshold
+- `type === 'price_move'` — `msg.direction` is `1` (up) or `-1` (down)
+- `type === 'resolved'` — `msg.result` is `1` (Yes won) or `-1` (No won)
 
-7. **Use correct chord names** — `:major7`, `:minor7`, `:maj9`, `:m9`, `:dom7` (NOT `:major9`, `:minor9`, `:M9`)
+## Track Metadata
 
-8. **Declare metadata** at the top of the `.rb` file before the `set` defaults:
-   ```ruby
-   # @category music
-   # @label My Track Name
-   ```
-   Category is `"music"` (continuous generative music) or `"alert"` (reactive event sounds). Defaults to `"music"` if omitted. Label defaults to the filename in title case
+Add metadata as comments or in the export for the track selector UI:
+```javascript
+// category: 'music', label: 'My Track Name'
+```
+Category is `"music"` (continuous generative) or `"alert"` (reactive). The server reads these from the file to populate the track selector.
 
-See `midnight_ticker.rb` for the full data interface, `oracle.rb` for a minimal price-only approach. Use the **Track Sandbox** (`/sandbox`) to test tracks with manual slider control.
+## Music Utilities
+
+`audio-engine.js` provides helpers:
+- `getScaleNotes(root, scaleType, count, octaves)` — Get scale notes (e.g., `getScaleNotes('C4', 'major', 8, 2)`)
+- `midiToNote(midi)` / `noteToMidi(note)` — Convert between MIDI numbers and note names
+- `SCALES` — `{major: [...], minor: [...]}` interval arrays
+
+## Tone.js Patterns
+
+Common patterns used in existing tracks:
+- **Loops:** `new Tone.Loop(callback, interval)` — equivalent to Sonic Pi's `live_loop`
+- **Synths:** `Tone.Synth`, `Tone.MonoSynth` (tb303-style), `Tone.PluckSynth`, `Tone.MembraneSynth` (kick), `Tone.NoiseSynth` (snare), `Tone.MetalSynth` (hat/cymbal)
+- **Effects:** `Tone.Reverb`, `Tone.FeedbackDelay`, `Tone.Filter`
+- **Parameter updates:** Use `.rampTo()` for smooth transitions, direct `.set()` for instant changes
+- **One-shots:** `synth.triggerAttackRelease(note, duration, time, velocity)`
 
 ## Existing Tracks
 
-### oracle.rb
-Minimal piano-only track with a single `price_watch` loop. Responds to any price movement > 1¢:
-- **`price_watch`** — Detects price deltas > 1¢. Plays ascending/descending piano motifs (2–6 notes) scaling with move magnitude. C major when bullish, A minor when bearish. Volume scales with velocity, trade_rate, and move magnitude but kept quiet (master volume 0.3, per-note amp capped at 0.05)
+### oracle.js
+Minimal piano-only alert track. Single `Tone.Loop` (3s interval). Plays ascending/descending motifs (2–6 notes) on price movement > 0.1. C major when bullish, A minor when bearish. Volume scales with velocity + trade_rate.
 
-Reads `:price`, `:tone`, `:velocity`, `:trade_rate`. Ignores heat, spread, events, resolution.
+### mezzanine.js
+Ambient dub track, 80 BPM. Am → Am → F → G progression. 10+ concurrent Tone.Loops: sub bass (sine), bass (MonoSynth/sawtooth), arp (PluckSynth), kick (MembraneSynth), snare (NoiseSynth), hi-hat (MetalSynth), rim, pad (PolySynth/triangle + heavy reverb), deep echo voice. Heat drives density inversely for pads. Price drives filter cutoff. Events trigger piano arpeggios and cymbal crashes.
 
-### mezzanine.rb
-Sigur Rós "Teardrop"-inspired ambient track, BPM 80. Am → Am → F → G progression. Features teardrop arpeggio (pluck), sub bass, bass line (tb303 with 4 phrase variants), kick, kick ghost, snare, ambient pad. Velocity-driven octave jumps in arpeggio. Heat-driven inverse amp (louder when calm).
+### just_vibes.js
+Lo-fi hip hop, 75 BPM. Key: F major / D minor. Chord clock syncs all harmonic loops via `chordIdx`. Same instrument palette as mezzanine but different harmonic field and rhythmic feel. Bullish: Fmaj7→Em7→Dm7→Cmaj7. Bearish: Dm7→Bbmaj7→Gm7→Am7.
 
-### just_vibes.rb
-Lo-fi hip hop track, BPM 75. Key: F major / D minor. Chord clock syncs all harmonic loops via shared `chord_idx`. Rhythmic bed: kick (half-time), snare (beat 3 with reverb), hats, rim clicks, sub bass (sine), warm bass (tb303, very low cutoff, 4 randomized phrases), hollow pad (inverse to heat), vinyl hiss, deep echo. Melodic elements only on market movement: piano motifs on price drift > 2¢, 7-note piano arpeggio on event_price_move, resolution figure. Tone-aware progressions: Fmaj7→Em7→Dm7→Cmaj7 (bullish) / Dm7→Bbmaj7→Gm7→Am7 (bearish).
+## Legacy Sonic Pi Tracks
 
-## Mastering Pipeline
-
-The mastering pipeline (`python -m mastering --all`) ensures all synths and samples produce equal perceived loudness at the same `amp:` value. It multiplies each `amp:` expression by a per-instrument factor (e.g., `amp: 0.18 * 0.85  # ~nf`). Lines marked `# ~nf` have been normalized.
-
-**When writing tracks:** Set amp values based on the mix role you want — louder for leads/kicks, quieter for textures/ambience. Don't worry about intrinsic instrument loudness differences; the mastering pipeline handles that.
-
-**After writing/modifying tracks:** Run `python -m mastering --all` to apply normalization. Use `--revert` to undo.
-
-Located in `mastering/` with its own docs at `mastering/MASTERING.md`. Workflow:
-
-1. `instruments.py` — Extract all unique synths/samples from .rb files
-2. `recorder.py` — Boot Sonic Pi headless, play each instrument at amp=0.3, record 5s WAV
-3. `analyzer.py` — Measure LUFS (integrated loudness) using librosa + pyloudnorm
-4. `apply.py` — Parse each .rb, find `amp:` expressions, multiply by per-instrument factor, mark with `# ~nf`
-5. Output: `mastering_output/normalization_table.json`
-
-Extra deps: `pip install -r requirements-mastering.txt` (pyloudnorm, librosa, soundfile, numpy)
+The original `.rb` tracks remain in `sonic_pi/` for reference and local Sonic Pi development. They are not deployed to the web server. See `sonic_pi/oracle.rb`, `sonic_pi/mezzanine.rb`, `sonic_pi/just_vibes.rb`.

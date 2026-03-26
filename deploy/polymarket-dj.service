@@ -1,0 +1,14 @@
+[Unit]
+Description=The Polymarket DJ
+After=network.target
+
+[Service]
+User=www-data
+WorkingDirectory=/opt/polymarket_dj
+ExecStart=/opt/polymarket_dj/venv/bin/python server.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
