@@ -1,5 +1,5 @@
 """
-Polymarket Bar — Web Control Panel
+The Polymarket DJ — Web Control Panel
 
 Single entry point: boots Sonic Pi headless, connects to Polymarket,
 and serves a web UI at http://localhost:8888 for full control.
@@ -785,7 +785,7 @@ HTML_PAGE = r"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>Polymarket Bar</title>
+<title>The Polymarket DJ</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0a0a0f; color: #e0e0e0; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 14px; }
@@ -940,10 +940,10 @@ HTML_PAGE = r"""<!DOCTYPE html>
 <body>
 <div class="container">
   <div style="display:flex; align-items:center; gap:16px;">
-    <h1>THE POLYMARKET BAR</h1>
+    <h1>THE POLYMARKET DJ</h1>
     <a href="/sandbox" style="color:#ff9900; text-decoration:none; font-size:12px; border:1px solid #ff990044; padding:4px 10px; border-radius:4px;">Track Sandbox</a>
   </div>
-  <div class="subtitle">One market. One mood. Real-time.</div>
+  <div class="subtitle">Listen to the market move.</div>
 
   <!-- Audio Engine -->
   <div class="panel">
@@ -1270,7 +1270,7 @@ SANDBOX_PAGE = r"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>Track Sandbox — Polymarket Bar</title>
+<title>Track Sandbox — The Polymarket DJ</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0a0a0f; color: #e0e0e0; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 14px; }

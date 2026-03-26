@@ -1,4 +1,4 @@
-# Polymarket Bar — Claude Context
+# The Polymarket DJ — Claude Context
 
 ## What This Is
 
