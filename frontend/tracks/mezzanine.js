@@ -178,15 +178,16 @@ class MezzanineTrack {
   // Play a sample with given params, connecting through an optional destination node
   _playSample(name, time, opts = {}) {
     if (!this.samplesReady || this.disposed) return;
-    const pool = this.samplePlayers[name];
-    if (!pool || pool.length === 0) return;
 
-    // Round-robin through pool
-    const entry = pool[0];
-    const player = entry.player;
+    // sampleBank.load() returns a Promise (resolves immediately if preloaded)
+    sampleBank.load(name).then((buf) => {
+      if (this.disposed) return;
+      this._playSampleWithBuffer(buf, time, opts);
+    });
+  }
 
-    // Create a fresh player each time for overlapping playback
-    const p = new Tone.Player(sampleBank.url(name));
+  _playSampleWithBuffer(buf, time, opts) {
+    const p = new Tone.Player(buf);
     const gain = new Tone.Gain(opts.amp !== undefined ? opts.amp : 1);
 
     if (opts.destination) {
@@ -201,22 +202,18 @@ class MezzanineTrack {
       p.playbackRate = opts.playbackRate;
     }
 
-    p.loaded.then(() => {
-      if (this.disposed) { p.dispose(); gain.dispose(); return; }
-      try {
-        p.start(time);
-        // Auto-dispose after playback
-        const dur = p.buffer.duration / (opts.playbackRate || 1);
-        const disposeTime = Math.max(0.1, dur + 1);
-        p.onstop = () => {
-          setTimeout(() => { try { p.dispose(); gain.dispose(); } catch (e) {} }, 100);
-        };
-        setTimeout(() => {
-          try { p.stop(); } catch (e) {}
-          try { p.dispose(); gain.dispose(); } catch (e) {}
-        }, disposeTime * 1000 + 500);
-      } catch (e) {}
-    });
+    try {
+      p.start(time);
+      const dur = p.buffer.duration / (opts.playbackRate || 1);
+      const disposeTime = Math.max(0.1, dur + 1);
+      p.onstop = () => {
+        setTimeout(() => { try { p.dispose(); gain.dispose(); } catch (e) {} }, 100);
+      };
+      setTimeout(() => {
+        try { p.stop(); } catch (e) {}
+        try { p.dispose(); gain.dispose(); } catch (e) {}
+      }, disposeTime * 1000 + 500);
+    } catch (e) {}
   }
 
   // Utility: random float in [lo, hi]
@@ -269,7 +266,7 @@ class MezzanineTrack {
       const root = self._chordRootMidi();
       const amp = (0.16 + h * 0.1) * 0.23;
       self.subSynth.triggerAttackRelease(
-        midiToNote(root), { attack: 0.2, sustain: 3, release: 0.8 }, time, amp
+        midiToNote(root), 3, time, amp
       );
     }, '1m'); // 4 beats = 1 measure
 
