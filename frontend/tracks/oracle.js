@@ -57,7 +57,7 @@ const oracleTrack = {
     // Per-note: amp_env * 0.95, pan: (frac - 0.5) * 0.3
     // Notes play with 0.3s spacing (sleep 0.3)
     return note(strudelNotes)
-      .s('fm')
+      .s('sine')
       .fmi(fmi)
       .fmh(2)
       .fmdecay(0.06 + hard * 0.12)

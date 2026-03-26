@@ -4,7 +4,7 @@
 // category: 'music', label: 'Just Vibes'
 //
 // Sonic Pi synth mapping (same as mezzanine):
-//   :piano  → s('fm') low fmi, fast fmdecay
+//   :piano  → s('sine') with fmi/fmh/fmdecay (FM piano)
 //   :tb303  → s('sawtooth') with lpf/lpq
 //   :hollow → s('triangle') with lpf + high room
 //   :dark_ambience → s('sawtooth') with heavy lpf + room
@@ -232,7 +232,7 @@ const justVibesTrack = (() => {
         const driftStr = driftNotes.map(n => noteToStrudel(n)).join(' ');
         layers.push(
           note(driftStr)
-            .s('fm').fmi(0.6).fmh(2).fmdecay(0.08)
+            .s('sine').fmi(0.6).fmh(2).fmdecay(0.08)
             .gain(driftVol * 0.97 * 0.95)
             .attack(0.003).decay(0.35).sustain(0.05).release(1.0)
             .room(0.75).rsize(4)
@@ -284,7 +284,7 @@ const justVibesTrack = (() => {
         const ns = dir > 0 ? sc : sc.slice().reverse();
         const noteStr = ns.map(n => noteToStrudel(n)).join(' ');
         return note(noteStr)
-          .s('fm').fmi(0.6).fmh(2).fmdecay(0.08)
+          .s('sine').fmi(0.6).fmh(2).fmdecay(0.08)
           .gain(0.09 * 0.97 * 0.95)
           .attack(0.003).decay(0.35).sustain(0.05).release(1.0)
           .delay(0.45).delaytime(0.75).delayfeedback(0.3)
@@ -301,7 +301,7 @@ const justVibesTrack = (() => {
         if (result !== 1) sc = sc.reverse();
         const noteStr = sc.map(n => noteToStrudel(n)).join(' ');
         return note(noteStr)
-          .s('fm').fmi(0.6).fmh(2).fmdecay(0.08)
+          .s('sine').fmi(0.6).fmh(2).fmdecay(0.08)
           .gain(0.09 * 0.97 * 0.95)
           .attack(0.003).decay(0.35).sustain(0.05).release(1.0)
           .delay(0.4).delaytime(0.5).delayfeedback(0.3)

@@ -5,9 +5,9 @@
 
 const audioEngine = (() => {
   let initialized = false;
+  let playing = false;
   let currentTrackDef = null;
   let currentTrackName = null;
-  let currentPattern = null;
   let masterVolume = 0.7;
   let latestData = {};
   let sampleNames = [];  // populated from server status message
@@ -32,8 +32,9 @@ const audioEngine = (() => {
   async function selectTrack(name) {
     if (!initialized) await init();
 
-    // Stop current pattern
-    _stop();
+    // Stop current pattern fully
+    try { hush(); } catch (e) {}
+    playing = false;
 
     const trackDef = trackRegistry[name];
     if (!trackDef) {
@@ -44,30 +45,30 @@ const audioEngine = (() => {
     currentTrackDef = trackDef;
     currentTrackName = name;
 
-    // Reset track state if it has an init method
+    // Reset track state
     if (trackDef.init) {
       trackDef.init();
     }
 
     // Generate and play the initial pattern
-    _regenerate();
+    _playPattern();
 
     console.log('[Audio] Track started:', name);
   }
 
-  function _stop() {
-    try { hush(); } catch (e) {}
-    currentPattern = null;
-  }
-
-  function _regenerate() {
+  /**
+   * Play (or replace) the current pattern.
+   * Calling .play() on a new pattern seamlessly replaces the previous one
+   * without needing hush() — avoids the cyclist stop/start spam.
+   */
+  function _playPattern() {
     if (!currentTrackDef) return;
 
     try {
       const pat = currentTrackDef.pattern(latestData);
       if (pat) {
-        currentPattern = pat.gain(masterVolume);
-        currentPattern.play();
+        pat.gain(masterVolume).play();
+        playing = true;
       }
     } catch (e) {
       console.warn('[Audio] Pattern generation error:', e);
@@ -75,43 +76,41 @@ const audioEngine = (() => {
   }
 
   function stop() {
-    _stop();
+    try { hush(); } catch (e) {}
+    playing = false;
     currentTrackDef = null;
     currentTrackName = null;
   }
 
   function setVolume(v) {
     masterVolume = v;
-    // Regenerate pattern with new volume
-    if (currentTrackDef) {
-      _stop();
-      _regenerate();
+    // Regenerate pattern with new volume — seamless replacement via .play()
+    if (playing && currentTrackDef) {
+      _playPattern();
     }
   }
 
   function onMarketData(data) {
     latestData = { ...latestData, ...data };
-    if (currentTrackDef) {
-      _stop();
-      _regenerate();
+    // Only regenerate if we're supposed to be playing
+    if (playing && currentTrackDef) {
+      _playPattern();
     }
   }
 
   function handleEvent(msg) {
-    if (currentTrackDef && currentTrackDef.onEvent) {
-      const eventPat = currentTrackDef.onEvent(msg.event, msg, latestData);
-      if (eventPat) {
-        // Layer the event pattern on top of the current pattern
-        _stop();
-        try {
-          const combined = currentTrackDef.pattern(latestData);
-          if (combined) {
-            currentPattern = stack(combined, eventPat).gain(masterVolume);
-            currentPattern.play();
-          }
-        } catch (e) {
-          console.warn('[Audio] Event pattern error:', e);
+    if (!playing || !currentTrackDef || !currentTrackDef.onEvent) return;
+
+    const eventPat = currentTrackDef.onEvent(msg.event, msg, latestData);
+    if (eventPat) {
+      // Layer the event pattern on top of the current pattern
+      try {
+        const base = currentTrackDef.pattern(latestData);
+        if (base) {
+          stack(base, eventPat).gain(masterVolume).play();
         }
+      } catch (e) {
+        console.warn('[Audio] Event pattern error:', e);
       }
     }
   }

@@ -5,7 +5,7 @@
 // category: 'music', label: 'Mezzanine'
 //
 // Sonic Pi synth mapping:
-//   :piano  → s('fm') with low fmi, fast fmdecay (hammer strike character)
+//   :piano  → s('sine') with fmi/fmh/fmdecay (FM piano, hammer strike character)
 //   :tb303  → s('sawtooth') with lpf/lpq (resonant acid bass)
 //   :pluck  → s('triangle') with short decay + room (Karplus-Strong approx)
 //   :hollow → s('triangle') with bandpass-like lpf + high room (breathy pad)
@@ -348,7 +348,7 @@ const mezzanineTrack = (() => {
         const ns = dir > 0 ? sc.slice(0, num) : sc.slice(0, num).reverse();
         const noteStr = ns.map(n => noteToStrudel(n)).join(' ');
         return note(noteStr)
-          .s('fm').fmi(0.8).fmh(2).fmdecay(0.1)
+          .s('sine').fmi(0.8).fmh(2).fmdecay(0.1)
           .gain(vol * 0.97)
           .attack(0.003).decay(0.4).sustain(0.05).release(1.5)
           .delay(0.5).delaytime(0.75).delayfeedback(0.5)
@@ -365,7 +365,7 @@ const mezzanineTrack = (() => {
           : getScaleNotes('A4', 'minor', 8, 1).reverse();
         const noteStr = sc.map(n => noteToStrudel(n)).join(' ');
         return note(noteStr)
-          .s('fm').fmi(0.8).fmh(2).fmdecay(0.1)
+          .s('sine').fmi(0.8).fmh(2).fmdecay(0.1)
           .gain(0.1 * 0.97)
           .attack(0.003).decay(0.4).sustain(0.05).release(1.5)
           .delay(0.4).delaytime(0.5).delayfeedback(0.4)
