@@ -19,7 +19,7 @@ const oracleTrack = {
 
     // Scale: C major (bullish) or A minor (bearish)
     const t = data.tone !== undefined ? data.tone : 1;
-    const scaleName = t === 1 ? 'C4 major' : 'A3 minor';
+    const scaleName = t === 1 ? 'C4:major' : 'A3:minor';
 
     // Bigger move → more chords (2-5)
     const num = Math.min(5, Math.max(2, 2 + Math.floor(mag * 5)));

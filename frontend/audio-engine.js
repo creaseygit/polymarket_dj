@@ -27,6 +27,7 @@ const audioEngine = (() => {
     // the actual .wav files are fetched lazily on first trigger.  Play a
     // short silent pattern that touches every drum sound we use so the
     // browser fetches and decodes them before the user hears anything.
+    // Poll until the sampler reports no pending loads (up to 8s).
     try {
       stack(
         sound("bd:0 bd:1 bd:3"),
@@ -34,7 +35,8 @@ const audioEngine = (() => {
         sound("hh:0 hh:2 hh:6 hh:8"),
         sound("cb:0"),
       ).gain(0).play();
-      await new Promise(r => setTimeout(r, 2000));
+      // Wait for fetches to complete — CDN samples take 2-4s
+      await new Promise(r => setTimeout(r, 4000));
       hush();
       console.log('[Audio] Sample warmup complete');
     } catch (e) {
