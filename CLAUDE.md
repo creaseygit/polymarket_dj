@@ -53,8 +53,9 @@ CloudFlare → Nginx → Python aiohttp (data only) ←→ Polymarket APIs
 | `frontend/index.html`     | Main page HTML, loads Tone.js from CDN                                                                                |
 | `frontend/app.js`         | UI logic: browse tabs, market picker, sliders, now-playing display                                                    |
 | `frontend/ws-client.js`   | WebSocket client with auto-reconnect                                                                                  |
-| `frontend/audio-engine.js`| Tone.js init, track registry, data→synth bridge, music theory utilities                                              |
+| `frontend/audio-engine.js`| Tone.js init, track registry, data→synth bridge, sample bank, music theory utilities                                 |
 | `frontend/tracks/*.js`    | Track files: `oracle.js` (alert piano), `mezzanine.js` (ambient dub), `just_vibes.js` (lo-fi hip hop)               |
+| `frontend/samples/*.ogg`  | 206 OGG samples (CC0, from Freesound via Sonic Pi). Loaded on demand by `sampleBank` in audio-engine.js              |
 | `deploy/`                 | Nginx config, systemd service, EC2 setup script                                                                       |
 
 ## Tech Stack

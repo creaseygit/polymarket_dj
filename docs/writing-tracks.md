@@ -54,28 +54,63 @@ Category is `"music"` (continuous generative) or `"alert"` (reactive). The serve
 
 `audio-engine.js` provides helpers:
 - `getScaleNotes(root, scaleType, count, octaves)` — Get scale notes (e.g., `getScaleNotes('C4', 'major', 8, 2)`)
-- `midiToNote(midi)` / `noteToMidi(note)` — Convert between MIDI numbers and note names
-- `SCALES` — `{major: [...], minor: [...]}` interval arrays
+- `midiToNote(midi)` / `noteToMidi(note)` — Convert between MIDI numbers and note names (supports sharps and flats: `C#4`, `Bb3`, `Eb4`)
+- `midiToHz(midi)` — Convert MIDI note to Hz. **Use this for all filter cutoff values** — Sonic Pi uses MIDI note numbers for cutoff, not Hz (e.g., `cutoff: 70` → `midiToHz(70)` ≈ 370 Hz)
+- `SCALES` — `{major, minor, major_pentatonic, minor_pentatonic, major7, minor7, m7minus5}` interval arrays
+
+## Sample Bank
+
+206 CC0-licensed OGG samples from Freesound (same set bundled with Sonic Pi) are in `frontend/samples/`. Use the `sampleBank` API to load and play them:
+
+```javascript
+// In constructor: preload samples you need
+const samples = ['bd_fat', 'sn_dub', 'drum_cymbal_closed', 'vinyl_hiss'];
+sampleBank.preload(samples).then(() => { this.samplesReady = true; });
+
+// Load a buffer for use with Tone.Player
+const buf = await sampleBank.load('bd_fat');
+const player = new Tone.Player(buf).connect(destination);
+player.playbackRate = 0.85;  // Sonic Pi rate: parameter
+player.start(time);
+
+// Or get a pre-wired player
+const player = await sampleBank.getPlayer('bd_fat', destination);
+```
+
+Sample names match Sonic Pi exactly (without the colon prefix): `bd_fat`, `sn_dub`, `drum_cymbal_closed`, `drum_cowbell`, `drum_cymbal_soft`, `vinyl_hiss`, etc.
+
+## Sonic Pi → Tone.js Synth Mapping
+
+| Sonic Pi synth | Tone.js equivalent | Notes |
+| --- | --- | --- |
+| `:piano` | `Tone.FMSynth` (harmonicity: 2–3) | `hard` → modulationIndex, `vel` → envelope decay |
+| `:pluck` | `Tone.PluckSynth` | `coeff` → resonance (lower coeff = more resonant) |
+| `:tb303` | `Tone.MonoSynth` (sawtooth) | Match filter envelope and Q/resonance |
+| `:hollow` | `Tone.PolySynth(Synth)` (triangle) | Slow attack (2–3s) + heavy reverb + LPF |
+| `:dark_ambience` | `Tone.Synth` (fatsawtooth, spread: 20) | Detuned saw pair + heavy LPF + reverb |
+| `:sine` | `Tone.Synth` (sine) | Direct equivalent |
+| samples (`:bd_fat` etc.) | `Tone.Player` via `sampleBank` | Use playbackRate for Sonic Pi `rate:` param |
 
 ## Tone.js Patterns
 
 Common patterns used in existing tracks:
 - **Loops:** `new Tone.Loop(callback, interval)` — equivalent to Sonic Pi's `live_loop`
-- **Synths:** `Tone.Synth`, `Tone.MonoSynth` (tb303-style), `Tone.PluckSynth`, `Tone.MembraneSynth` (kick), `Tone.NoiseSynth` (snare), `Tone.MetalSynth` (hat/cymbal)
+- **Synths:** `Tone.FMSynth` (piano), `Tone.MonoSynth` (tb303-style), `Tone.PluckSynth`, `Tone.Player` (samples)
 - **Effects:** `Tone.Reverb`, `Tone.FeedbackDelay`, `Tone.Filter`
 - **Parameter updates:** Use `.rampTo()` for smooth transitions, direct `.set()` for instant changes
 - **One-shots:** `synth.triggerAttackRelease(note, duration, time, velocity)`
+- **Filter cutoffs:** Always use `midiToHz()` when porting from Sonic Pi cutoff values
 
 ## Existing Tracks
 
 ### oracle.js
-Minimal piano-only alert track. Single `Tone.Loop` (3s interval). Plays ascending/descending motifs (2–6 notes) on price movement > 0.1. C major when bullish, A minor when bearish. Volume scales with velocity + trade_rate.
+Piano alert track. Single `Tone.Loop` (3s interval). FMSynth voices with per-note panning play ascending/descending motifs (2–6 notes) on price movement > 0.1. C major when bullish, A minor when bearish. `hard` and `vel` parameters drive FM modulation depth and envelope. Volume scales with velocity + trade_rate, adjusted for `set_volume! 0.3`.
 
 ### mezzanine.js
-Ambient dub track, 80 BPM. Am → Am → F → G progression. 10+ concurrent Tone.Loops: sub bass (sine), bass (MonoSynth/sawtooth), arp (PluckSynth), kick (MembraneSynth), snare (NoiseSynth), hi-hat (MetalSynth), rim, pad (PolySynth/triangle + heavy reverb), deep echo voice. Heat drives density inversely for pads. Price drives filter cutoff. Events trigger piano arpeggios and cymbal crashes.
+Massive Attack/Teardrop-inspired ambient dub, 80 BPM. Am → Am → F → G progression. 12+ concurrent loops: sub bass (sine), bass (MonoSynth/tb303), arp (PluckSynth with octave shifts), kick + kick ghost (bd_fat samples), snare (sn_dub), hi-hat (drum_cymbal_closed through HPF), rim (drum_cowbell), vinyl dust (vinyl_hiss), pad/dub wash (triangle + reverb), deep echo (fatsawtooth + delay), price drift (PluckSynth through reverb→echo→LPF), ambient drone. Heat inversely drives pad density. Price drives all filter cutoffs via `midiToHz()`. Events trigger FMSynth piano arpeggios and cymbal crashes.
 
 ### just_vibes.js
-Lo-fi hip hop, 75 BPM. Key: F major / D minor. Chord clock syncs all harmonic loops via `chordIdx`. Same instrument palette as mezzanine but different harmonic field and rhythmic feel. Bullish: Fmaj7→Em7→Dm7→Cmaj7. Bearish: Dm7→Bbmaj7→Gm7→Am7.
+Lo-fi hip hop, 75 BPM. Key: F major / D minor. Chord clock syncs all harmonic loops via `chordIdx`. Same sample-based drum palette as mezzanine. Bullish: Fmaj7→Em7→Dm7→Cmaj7. Bearish: Dm7→Bbmaj7→Gm7→Am7. Pad uses self-scheduling for random 6-8 beat intervals. Deep echo uses fatsawtooth through delay→LPF at random 10-14 beat intervals.
 
 ## Legacy Sonic Pi Tracks
 
