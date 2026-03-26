@@ -86,17 +86,35 @@ end
 live_loop :teardrop_arp do
   h = get(:heat)
   pr = get(:price)
+  v = get(:velocity)
+  tr = get(:trade_rate)
   ns = arp_notes
   use_synth :pluck
   amp_val = [0.04 - (h * 0.015), 0.015].max
-  with_fx :reverb, room: 0.8, damp: 0.5, mix: 0.6 do
-    with_fx :lpf, cutoff: 75 + (pr * 15) do
-      sleep 0.5
-      ns.each do |n|
-        play n, amp: amp_val * rrand(0.7, 1.0) * 1.86, release: 1.5, coeff: 0.15  # ~nf
+  if h > 0.75 && rand < 0.6
+    sleep 4
+  else
+    with_fx :reverb, room: 0.8, damp: 0.5, mix: 0.6 do
+      with_fx :lpf, cutoff: 75 + (pr * 15) do
+        sleep 0.5
+        ns.each do |n|
+          if rand < 0.12
+            sleep [0.25, 0.5].choose
+          else
+            oct = (v > 0.4 && rand < v * 0.4) ? 12 : 0
+            vel = amp_val * rrand(0.6, 1.0)
+            play n + oct, amp: vel * 1.86, release: rrand(1.0, 2.0), coeff: rrand(0.1, 0.2)  # ~nf
+            if tr > 0.5 && rand < 0.2
+              sleep 0.25
+              play n + 12, amp: vel * 0.5 * 1.86, release: 0.8, coeff: 0.1  # ~nf
+              sleep 0.25
+            else
+              sleep tr > 0.4 ? [0.25, 0.5, 0.75].choose : 0.5
+            end
+          end
+        end
         sleep 0.5
       end
-      sleep 0.5
     end
   end
 end
@@ -170,7 +188,7 @@ live_loop :hat_ghost do
 end
 
 live_loop :vinyl_dust do
-  sample :vinyl_hiss, amp: 0.04 * 5.0, rate: 0.8, finish: 0.4  # ~nf
+  sample :vinyl_hiss, amp: 0.045 * 5.0, rate: 0.8  # ~nf
   sleep 8
 end
 
@@ -215,7 +233,7 @@ live_loop :price_drift do
     sc = t == 1 ? scale(:a4, :minor_pentatonic, num_octaves: 2) :
       scale(:a4, :minor_pentatonic, num_octaves: 2)
     num = [[2 + (mag * 20).to_i, 2].max, 6].min
-    vol = [[0.02 + (mag * 0.5), 0.02].max, 0.08].min
+    vol = [[0.04 + (mag * 0.6), 0.04].max, 0.14].min
     ns = raw_delta > 0 ? sc.take(num) : sc.take(num).reverse
     use_synth :pluck
     with_fx :reverb, room: 0.9, damp: 0.4, mix: 0.75 do
