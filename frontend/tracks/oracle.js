@@ -12,24 +12,6 @@ const oracleTrack = {
   label: 'Oracle',
   category: 'alert',
 
-  // Pre-defined chord run patterns — triads on consecutive scale degrees.
-  // Each [a,b,c] is a simultaneous triad (polyphonic mini-notation).
-  // Degrees beyond 6 wrap into the next octave via Strudel's scale mapping.
-  _runs: {
-    up: {
-      2: "[0,2,4] [1,3,5] ~ ~ ~ ~ ~",
-      3: "[0,2,4] [1,3,5] [2,4,6] ~ ~ ~ ~",
-      4: "[0,2,4] [1,3,5] [2,4,6] [3,5,7] ~ ~ ~",
-      5: "[0,2,4] [1,3,5] [2,4,6] [3,5,7] [4,6,8] ~ ~",
-    },
-    down: {
-      2: "[1,3,5] [0,2,4] ~ ~ ~ ~ ~",
-      3: "[2,4,6] [1,3,5] [0,2,4] ~ ~ ~ ~",
-      4: "[3,5,7] [2,4,6] [1,3,5] [0,2,4] ~ ~ ~",
-      5: "[4,6,8] [3,5,7] [2,4,6] [1,3,5] [0,2,4] ~ ~",
-    },
-  },
-
   _cachedPattern: null,
   _cachedKey: null,
 
@@ -51,7 +33,8 @@ const oracleTrack = {
 
     // Major (bullish) or minor (bearish)
     const t = data.tone !== undefined ? data.tone : 1;
-    const scaleName = t === 1 ? 'C4:major' : 'A3:minor';
+    const root = t === 1 ? 'C4' : 'A3';
+    const scaleType = t === 1 ? 'major' : 'minor';
 
     // 2-5 chords based on movement magnitude
     const num = Math.min(5, 2 + Math.floor(mag * 4));
@@ -59,24 +42,34 @@ const oracleTrack = {
     // Direction follows the price curve
     const dir = pm >= 0 ? 'up' : 'down';
 
-    // Return cached pattern if musical output hasn't changed —
-    // the audio engine uses object identity to skip unnecessary .play() calls
-    const key = `${dir}:${num}:${scaleName}`;
+    // Return cached pattern if musical output hasn't changed
+    const key = `${dir}:${num}:${root}`;
     if (this._cachedPattern && this._cachedKey === key) {
       return this._cachedPattern;
     }
 
-    // Volume scales with movement size
+    // Build triads from explicit note names (same proven approach as mezzanine pads)
+    const scaleNotes = getScaleNotes(root, scaleType, 14, 2);
+    const chords = [];
+    for (let i = 0; i < num; i++) {
+      const idx = dir === 'up' ? i : (num - 1 - i);
+      const r = noteToStrudel(scaleNotes[idx]);
+      const third = noteToStrudel(scaleNotes[idx + 2]);
+      const fifth = noteToStrudel(scaleNotes[idx + 4]);
+      chords.push(`[${r},${third},${fifth}]`);
+    }
+    const rests = Array(Math.max(2, 5 - num)).fill('~');
+    const pat = [...chords, ...rests].join(' ');
+
+    // Volume scales with movement; slow sine gives natural per-chord dynamics
     const vol = 0.02 + mag * 0.04;
 
-    const result = mini(this._runs[dir][num])
-      .n().scale(scaleName)
+    const result = note(pat)
       .sound("piano")
-      .gain(rand.range(vol * 0.8, vol * 1.2))
-      .late(rand.range(0, 0.015))
+      .gain(sine.range(vol * 0.75, vol).slow(3))
       .room(0.5)
       .clip(2)
-      .cpm(12);
+      .cpm(24);
 
     this._cachedPattern = result;
     this._cachedKey = key;
