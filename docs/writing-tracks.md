@@ -88,6 +88,13 @@ Add metadata as comments at the top of the file for the server to parse:
 // category: 'music', label: 'My Track Name'
 ```
 
+## Adding a New Track
+
+Tracks are **auto-discovered and dynamically loaded** — no `index.html` changes needed:
+1. Create `frontend/tracks/yourname.js` with the metadata comment and `registerTrack()` call
+2. Restart the server (it scans `frontend/tracks/` on startup)
+3. The browser loads track scripts dynamically based on the server's discovered list
+
 ## Music Utilities
 
 `audio-engine.js` provides helpers (independent of Strudel):

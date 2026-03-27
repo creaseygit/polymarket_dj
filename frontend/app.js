@@ -307,10 +307,28 @@ function updateAudioUI() {
   }
 }
 
-function onWsStatus(data) {
-  // Populate track selector
+// ── Dynamic track loader ──
+// Loads track JS files reported by the server, so adding a new .js file
+// to frontend/tracks/ is all that's needed — no index.html changes.
+let _tracksLoaded = false;
+function loadTrackScripts(tracks) {
+  if (_tracksLoaded) return Promise.resolve();
+  _tracksLoaded = true;
+  return Promise.all(tracks.map(t => new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = `/static/tracks/${t.name}.js`;
+    s.onload = resolve;
+    s.onerror = () => { console.warn('[Tracks] Failed to load:', t.name); resolve(); };
+    document.head.appendChild(s);
+  })));
+}
+
+async function onWsStatus(data) {
+  // Dynamically load track scripts from the server's discovered list
   const sel = document.getElementById('track-select');
   if (sel.options.length === 0 && data.tracks) {
+    await loadTrackScripts(data.tracks);
+
     const groups = {};
     data.tracks.forEach(t => {
       const cat = t.category || 'music';

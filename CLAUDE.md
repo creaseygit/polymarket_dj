@@ -51,10 +51,10 @@ CloudFlare → Nginx → Python aiohttp (data only) ←→ Polymarket APIs
 | `polymarket/scorer.py`    | Heat scoring: `price_velocity * 0.35 + trade_rate * 0.40 + volume * 0.15 + spread * 0.10`                           |
 | `mixer/mixer.py`          | `AutonomousDJ` — market selection via `pin_market()`, `_primary_asset()`, live finance auto-rotation                 |
 | `frontend/index.html`     | Main page HTML, loads Strudel from CDN                                                                                |
-| `frontend/app.js`         | UI logic: browse tabs, market picker, sliders, now-playing display                                                    |
+| `frontend/app.js`         | UI logic: browse tabs, market picker, sliders, now-playing display, dynamic track loader                              |
 | `frontend/ws-client.js`   | WebSocket client with auto-reconnect                                                                                  |
 | `frontend/audio-engine.js`| Strudel init, track registry, pattern lifecycle (AudioContext suspend/resume), silence handling, music theory utils    |
-| `frontend/tracks/*.js`    | Track files: `oracle.js` (alert piano chords), `mezzanine.js` (trip-hop). Uses `sound()`, `note()`, `n().scale()`, `stack()`, `cat()`, `<>` cycling, `degradeBy()` |
+| `frontend/tracks/*.js`    | Track files (auto-discovered, dynamically loaded): `oracle.js` (alert piano chords), `mezzanine.js` (trip-hop), `jazz_alerts.js` (jazz trio + alert piano). Drop a new `.js` file here and restart the server — no other changes needed |
 | `deploy/`                 | Nginx config, systemd service, EC2 setup script                                                                       |
 
 ## Tech Stack
