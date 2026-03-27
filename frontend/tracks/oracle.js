@@ -69,7 +69,7 @@ const oracleTrack = {
       .gain(sine.range(vol * 0.75, vol).slow(3))
       .room(0.5)
       .clip(2)
-      .cpm(24);
+      .cpm(40);
 
     this._cachedPattern = result;
     this._cachedKey = key;
