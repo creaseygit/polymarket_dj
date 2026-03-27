@@ -256,7 +256,7 @@ def _compute_market_data(session: ClientSession, scorer: MarketScorer):
 
     # Rolling price move over PRICE_MOVE_WINDOW seconds
     # Compare current price to price N entries ago (each entry = DATA_PUSH_INTERVAL)
-    price_move_n = 0.0
+    price_move_raw = 0.0
     if not is_rotation and len(session._price_history) >= 2:
         window_entries = min(
             len(session._price_history),
@@ -267,7 +267,20 @@ def _compute_market_data(session: ClientSession, scorer: MarketScorer):
         move_sign = 1.0 if raw_move >= 0 else -1.0
         move_mag = min(1.0, abs(raw_move) / PRICE_MOVE_MAX)
         move_mag = _apply_sensitivity(move_mag, sens_exp)
-        price_move_n = move_sign * move_mag
+        price_move_raw = move_sign * move_mag
+
+    # Edge detection: only emit price_move when movement is *increasing*
+    # (actively moving). When magnitude is flat or decaying (stale window
+    # sliding past a completed move), emit zero.
+    prev_pm = session._prev_price_move
+    same_dir = (price_move_raw >= 0) == (prev_pm >= 0)
+    if same_dir and abs(price_move_raw) > abs(prev_pm) + 0.01:
+        price_move_n = price_move_raw          # magnitude growing → active move
+    elif not same_dir and abs(price_move_raw) > 0.05:
+        price_move_n = price_move_raw          # direction flipped → new move
+    else:
+        price_move_n = 0.0                     # flat or decaying → silence
+    session._prev_price_move = price_move_raw
 
     data = {
         "heat": round(heat_n, 4),

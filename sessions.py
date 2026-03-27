@@ -30,6 +30,7 @@ class ClientSession:
 
         # Rolling price buffer for price_move signal (~60s at 3s intervals)
         self._price_history: deque[float] = deque(maxlen=20)
+        self._prev_price_move: float = 0.0
 
     def reset_event_state(self):
         """Reset event baselines (e.g. after market switch)."""
@@ -38,6 +39,7 @@ class ClientSession:
         self._prev_asset = None
         self._current_tone = 1
         self._price_history.clear()
+        self._prev_price_move = 0.0
 
 
 class SessionManager:
