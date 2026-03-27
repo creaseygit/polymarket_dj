@@ -1,6 +1,10 @@
 // ── Oracle Track (Strudel) ───────────────────────────────
-// Alert track. Silence when market is calm.
-// Piano chord walks when price moves — direction matches the move.
+// Piano chords trace the price curve directly.
+// price_move (rolling 30s window) drives everything:
+//   magnitude → number of chords (2-5)
+//   sign → ascending (price up) or descending (price down)
+// Sensitivity controls how big a move triggers music.
+// Major scale when bullish, minor when bearish.
 // category: 'alert', label: 'Oracle'
 
 const oracleTrack = {
@@ -8,81 +12,60 @@ const oracleTrack = {
   label: 'Oracle',
   category: 'alert',
 
-  _cachedPattern: null,
-  _cachedKey: null,
-
-  init() {
-    this._cachedPattern = null;
-    this._cachedKey = null;
+  // Pre-defined chord run patterns — triads on consecutive scale degrees.
+  // Each [a,b,c] is a simultaneous triad (polyphonic mini-notation).
+  // Degrees beyond 6 wrap into the next octave via Strudel's scale mapping.
+  _runs: {
+    up: {
+      2: "[0,2,4] [1,3,5] ~ ~ ~ ~ ~",
+      3: "[0,2,4] [1,3,5] [2,4,6] ~ ~ ~ ~",
+      4: "[0,2,4] [1,3,5] [2,4,6] [3,5,7] ~ ~ ~",
+      5: "[0,2,4] [1,3,5] [2,4,6] [3,5,7] [4,6,8] ~ ~",
+    },
+    down: {
+      2: "[1,3,5] [0,2,4] ~ ~ ~ ~ ~",
+      3: "[2,4,6] [1,3,5] [0,2,4] ~ ~ ~ ~",
+      4: "[3,5,7] [2,4,6] [1,3,5] [0,2,4] ~ ~ ~",
+      5: "[4,6,8] [3,5,7] [2,4,6] [1,3,5] [0,2,4] ~ ~",
+    },
   },
 
   pattern(data) {
-    const pd = data.price_delta || 0;
-    const mag = Math.abs(pd);
+    const pm = data.price_move || 0;
+    const mag = Math.abs(pm);
 
-    // No significant movement → silence
-    if (mag <= 0.1) {
-      this._cachedPattern = null;
-      this._cachedKey = null;
-      return null;
-    }
+    // No meaningful price movement → silence
+    if (mag < 0.05) return null;
 
-    // Scale: C major (bullish) or A minor (bearish)
+    // Major (bullish) or minor (bearish)
     const t = data.tone !== undefined ? data.tone : 1;
     const scaleName = t === 1 ? 'C4:major' : 'A3:minor';
 
-    // 2-5 notes based on magnitude of price move.
-    // Bias toward longer runs: use sqrt to push values up the curve.
-    const t01 = (mag - 0.1) / 0.9;                       // 0 at threshold, 1 at max
-    const num = Math.min(5, 2 + Math.floor(Math.sqrt(t01) * 4)); // 2,3,4,5
+    // 2-5 chords based on movement magnitude
+    const num = Math.min(5, 2 + Math.floor(mag * 4));
 
-    // Direction: positive = ascending, negative = descending
-    const dir = pd > 0 ? 'up' : 'down';
+    // Direction follows the price curve
+    const dir = pm >= 0 ? 'up' : 'down';
 
-    // Reuse cached pattern if direction, note count, and scale haven't changed.
-    // This avoids mid-cycle pattern replacement that can swallow notes.
-    const key = `${dir}:${num}:${scaleName}`;
-    if (this._cachedPattern && this._cachedKey === key) {
-      return this._cachedPattern;
-    }
+    // Volume scales with movement size
+    const vol = 0.02 + mag * 0.04;
 
-    // Scale degrees spaced by 2 (thirds) for clear pitch separation
-    const degrees = [];
-    if (pd > 0) {
-      for (let i = 0; i < num; i++) degrees.push(i * 2);
-    } else {
-      for (let i = num - 1; i >= 0; i--) degrees.push(i * 2);
-    }
-
-    // Each note gets its own slot; pad with rests so it doesn't loop too fast.
-    // cpm(12) → 5s cycle. With 5 notes + 3 rests = 8 slots, each slot ≈ 0.6s.
-    // That gives enough separation to clearly hear ascending vs descending.
-    const rests = Array(Math.max(2, 8 - num)).fill('~');
-    const pat = [...degrees, ...rests].join(' ');
-
-    // Base volume scales with magnitude and market activity
-    const v = data.velocity || 0.1;
-    const tr = data.trade_rate || 0.2;
-    const activity = Math.min(1.0, 0.3 + v * 0.4 + tr * 0.3);
-    const vol = Math.min(0.05, Math.max(0.02, 0.02 + mag * 0.06)) * activity;
-
-    // mini() converts string to Pattern, then off() adds chord voicing before scale mapping
-    const result = mini(pat)
-      .off(1/8, add("2,4"))
+    return mini(this._runs[dir][num])
       .n().scale(scaleName)
       .sound("piano")
-      .gain(rand.range(vol * 0.6, vol * 1.2))
-      .late(rand.range(0, 0.02))
-      .room(rand.range(0.4, 0.7))
+      .gain(rand.range(vol * 0.8, vol * 1.2))
+      .late(rand.range(0, 0.015))
+      .room(0.5)
       .clip(2)
       .cpm(12);
-
-    this._cachedPattern = result;
-    this._cachedKey = key;
-    return result;
   },
 
-  onEvent() { return null; },
+  onEvent(type) {
+    if (type === 'spike') {
+      return note("c6").sound("piano").gain(0.02).room(0.7);
+    }
+    return null;
+  },
 };
 
 audioEngine.registerTrack('oracle', oracleTrack);

@@ -25,6 +25,10 @@ DEFAULT_SENSITIVITY    = 0.5       # 0.0 (least reactive) → 1.0 (most reactive
 EVENT_HEAT_THRESHOLD   = 0.15      # heat delta to fire :event_spike
 EVENT_PRICE_THRESHOLD  = 0.03      # price delta (¢) to fire :event_price_move
 
+# ── Rolling price movement ─────────────────────────────────
+PRICE_MOVE_WINDOW      = 30        # seconds — look-back for price_move signal
+PRICE_MOVE_MAX         = 0.05      # 5¢ move in window = magnitude 1.0
+
 # ── WebSocket (server → browser) ────────────────────────
 WS_PING_INTERVAL = 30           # seconds, keep-alive for CloudFlare's 100s idle timeout
 MAX_CLIENTS      = 200          # safety limit on concurrent WebSocket connections

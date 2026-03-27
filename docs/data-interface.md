@@ -8,14 +8,15 @@ The server pushes **normalized market data** to each connected browser client vi
 | ------------- | --------- | ------------------------------------------------------------------- |
 | `heat`        | 0.0 – 1.0 | Composite market activity (velocity, trade rate, volume, spread)    |
 | `price`       | 0.0 – 1.0 | Current price (WS bid/ask midpoint preferred, Gamma API fallback)   |
-| `price_delta` | -1.0 – 1.0| Per-cycle price change, sensitivity-adjusted. Signed: +ve = up, -ve = down. Normalized so raw 10¢ → magnitude 1.0 |
+| `price_delta` | -1.0 – 1.0| Per-cycle (3s) price change, sensitivity-adjusted. Signed: +ve = up, -ve = down. Normalized so raw 10¢ → magnitude 1.0 |
+| `price_move`  | -1.0 – 1.0| Rolling window (30s) price change, sensitivity-adjusted. Signed. Normalized so raw 5¢ → magnitude 1.0. Best signal for tracking price curves |
 | `velocity`    | 0.0 – 1.0 | Price velocity (first derivative, 5-min window average)             |
 | `trade_rate`  | 0.0 – 1.0 | Trades per minute, normalized                                       |
 | `spread`      | 0.0 – 1.0 | Bid-ask spread, normalized (raw 0–0.3 → 0–1)                        |
 | `tone`        | 0 or 1    | 1 = major (price > 0.55), 0 = minor (price < 0.45), with hysteresis |
 | `sensitivity` | 0.0 – 1.0 | Client's sensitivity setting (0=low, 1=high). Optional for tracks   |
 
-Activity metrics (`heat`, `velocity`, `trade_rate`, `spread`) are transformed by a power curve based on sensitivity before pushing. At 50% (default) the values are unchanged; at 100% small values are inflated; at 0% small values are crushed. `price` and `tone` are never affected.
+Activity metrics (`heat`, `velocity`, `trade_rate`, `spread`, `price_move`) are transformed by a power curve based on sensitivity before pushing. At 50% (default) the values are unchanged; at 100% small values are inflated; at 0% small values are crushed. `price` and `tone` are never affected. `price_delta` is also sensitivity-adjusted.
 
 ## Event Triggers (separate WebSocket messages)
 

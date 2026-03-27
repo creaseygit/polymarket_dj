@@ -32,6 +32,7 @@ from config import (
     RESCORE_INTERVAL, BROWSE_CATEGORIES,
     DEFAULT_SENSITIVITY, EVENT_HEAT_THRESHOLD, EVENT_PRICE_THRESHOLD,
     WS_PING_INTERVAL, MAX_CLIENTS, DATA_PUSH_INTERVAL,
+    PRICE_MOVE_WINDOW, PRICE_MOVE_MAX,
 )
 
 
@@ -229,6 +230,10 @@ def _compute_market_data(session: ClientSession, scorer: MarketScorer):
         session._prev_heat = heat
         session._prev_price = last_price
         session._current_tone = 1 if last_price > 0.5 else 0
+        session._price_history.clear()
+
+    # Append to rolling price buffer (one entry per broadcast cycle)
+    session._price_history.append(last_price)
 
     # Event detection + price delta
     price_delta_n = 0.0
@@ -249,10 +254,26 @@ def _compute_market_data(session: ClientSession, scorer: MarketScorer):
     session._prev_heat = heat
     session._prev_price = last_price
 
+    # Rolling price move over PRICE_MOVE_WINDOW seconds
+    # Compare current price to price N entries ago (each entry = DATA_PUSH_INTERVAL)
+    price_move_n = 0.0
+    if not is_rotation and len(session._price_history) >= 2:
+        window_entries = min(
+            len(session._price_history),
+            max(1, int(PRICE_MOVE_WINDOW / DATA_PUSH_INTERVAL)),
+        )
+        old_price = session._price_history[-window_entries]
+        raw_move = last_price - old_price
+        move_sign = 1.0 if raw_move >= 0 else -1.0
+        move_mag = min(1.0, abs(raw_move) / PRICE_MOVE_MAX)
+        move_mag = _apply_sensitivity(move_mag, sens_exp)
+        price_move_n = move_sign * move_mag
+
     data = {
         "heat": round(heat_n, 4),
         "price": round(price_n, 4),
         "price_delta": round(price_delta_n, 4),
+        "price_move": round(price_move_n, 4),
         "velocity": round(velocity_n, 4),
         "trade_rate": round(trade_rate_n, 4),
         "spread": round(spread_n, 4),

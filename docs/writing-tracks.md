@@ -60,7 +60,8 @@ The `pattern(data)` method receives:
 {
   heat: 0.0-1.0,        // Composite market activity (sensitivity-adjusted)
   price: 0.0-1.0,       // Current market price
-  price_delta: -1.0-1.0, // Signed per-cycle price change (sensitivity-adjusted)
+  price_delta: -1.0-1.0, // Signed per-cycle (3s) price change (sensitivity-adjusted)
+  price_move: -1.0-1.0,  // Signed rolling window (30s) price change (sensitivity-adjusted)
   velocity: 0.0-1.0,     // Price velocity (sensitivity-adjusted)
   trade_rate: 0.0-1.0,   // Trades per minute (sensitivity-adjusted)
   spread: 0.0-1.0,       // Bid-ask spread (sensitivity-adjusted)
@@ -178,7 +179,7 @@ note("c3 ~ e3 ~ g3").sound("sine")  // ~ = silence
 ## Existing Tracks
 
 ### oracle.js
-Piano alert track. Returns pattern only when `|price_delta| > 0.1`, otherwise `null` (silence). FM synth voices play ascending/descending motifs (2-6 notes from scale). C major when bullish, A minor when bearish. Volume very low (matching Sonic Pi `set_volume! 0.3`). From `sonic_pi/oracle.rb`.
+Piano chord walk that traces the price curve. Uses `price_move` (rolling 30s window): magnitude sets chord count (2-5), sign sets direction (ascending=up, descending=down). Silence when `|price_move| < 0.05`. Sensitivity controls how big a move triggers music. C major when bullish (tone=1), A minor when bearish (tone=0). Uses pre-defined triad chord runs via polyphonic mini-notation `[deg,deg+2,deg+4]`.
 
 ### mezzanine.js
 Massive Attack trip-hop, 80 BPM. Am → Am → Fm → Gm progression (4-bar cycle). Half-time beat: kick on 1 and "and" of 2 (`bd:3`), snare on 3 only (`sd:1`), 8th-note hi-hats with `degradeBy` for human feel. Deep saw bass with root-fifth phrases, sub bass (sine) on roots. Pad triads (triangle + reverb), vinyl hiss. Activity-gated: open hat, ghost kicks, dub echo stab (delay/feedback), cowbell rim clicks. Tone switches between natural minor (bullish) and darker voicings (bearish). Events trigger piano arpeggios and cymbal crashes.

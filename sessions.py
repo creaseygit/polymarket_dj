@@ -6,6 +6,7 @@ sensitivity, and event detection state. SessionManager coordinates shared
 Polymarket WebSocket subscriptions via reference counting.
 """
 import uuid
+from collections import deque
 from aiohttp import web
 
 
@@ -27,12 +28,16 @@ class ClientSession:
         self._prev_asset: str | None = None
         self._current_tone: int = 1           # 1=bullish, 0=bearish
 
+        # Rolling price buffer for price_move signal (~60s at 3s intervals)
+        self._price_history: deque[float] = deque(maxlen=20)
+
     def reset_event_state(self):
         """Reset event baselines (e.g. after market switch)."""
         self._prev_heat = 0.0
         self._prev_price = 0.5
         self._prev_asset = None
         self._current_tone = 1
+        self._price_history.clear()
 
 
 class SessionManager:
