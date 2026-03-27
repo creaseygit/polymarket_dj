@@ -10,6 +10,7 @@ const audioEngine = (() => {
   let currentTrackName = null;
   let masterVolume = 0.7;
   let latestData = {};
+  let _lastTrackPat = null;  // track pattern identity — skip .play() when unchanged
 
   // Track registry — populated by track files calling audioEngine.registerTrack()
   const trackRegistry = {};
@@ -80,7 +81,8 @@ const audioEngine = (() => {
       }
     } catch (e) { console.warn('[Audio] resume error:', e); }
 
-    // Generate and play the initial pattern
+    // Generate and play the initial pattern (force — first play after track switch)
+    _lastTrackPat = null;
     _playPattern();
 
     console.log('[Audio] Track started:', name);
@@ -88,20 +90,28 @@ const audioEngine = (() => {
 
   /**
    * Play (or replace) the current pattern.
-   * Calling .play() on a new pattern seamlessly replaces the previous one
-   * without needing hush() — avoids the cyclist stop/start spam.
+   * Tracks return the same Pattern object when their musical output hasn't
+   * changed. We compare by identity (===) and skip .play() to avoid
+   * restarting Strudel's cyclist on every 3s data push.
+   * Pass force=true when volume changes or after events to ensure a replay.
    */
-  function _playPattern() {
+  function _playPattern(force) {
     if (!currentTrackDef) return;
 
     try {
       const pat = currentTrackDef.pattern(latestData);
       if (pat) {
-        pat.gain(masterVolume).play();
+        if (force || pat !== _lastTrackPat) {
+          pat.gain(masterVolume).play();
+          _lastTrackPat = pat;
+        }
+        // Same object → pattern is still cycling, no action needed
       } else {
-        // Track wants silence — replace current pattern with empty one.
-        // Without this, the previous non-null pattern keeps looping.
-        silence.play();
+        // Track wants silence
+        if (_lastTrackPat !== null) {
+          silence.play();
+          _lastTrackPat = null;
+        }
       }
       // Always mark as playing so data updates keep regenerating the pattern.
       // Otherwise a track that starts silent (e.g. oracle with no movement)
@@ -123,13 +133,14 @@ const audioEngine = (() => {
     playing = false;
     currentTrackDef = null;
     currentTrackName = null;
+    _lastTrackPat = null;
   }
 
   function setVolume(v) {
     masterVolume = v;
-    // Regenerate pattern with new volume — seamless replacement via .play()
+    // Force replay with new volume
     if (playing && currentTrackDef) {
-      _playPattern();
+      _playPattern(true);
     }
   }
 
@@ -151,6 +162,7 @@ const audioEngine = (() => {
         const base = currentTrackDef.pattern(latestData);
         if (base) {
           stack(base, eventPat).gain(masterVolume).play();
+          _lastTrackPat = null;  // force base pattern replay on next data push
         }
       } catch (e) {
         console.warn('[Audio] Event pattern error:', e);

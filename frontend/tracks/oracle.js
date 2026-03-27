@@ -30,12 +30,24 @@ const oracleTrack = {
     },
   },
 
+  _cachedPattern: null,
+  _cachedKey: null,
+
+  init() {
+    this._cachedPattern = null;
+    this._cachedKey = null;
+  },
+
   pattern(data) {
     const pm = data.price_move || 0;
     const mag = Math.abs(pm);
 
     // No meaningful price movement → silence
-    if (mag < 0.05) return null;
+    if (mag < 0.05) {
+      this._cachedPattern = null;
+      this._cachedKey = null;
+      return null;
+    }
 
     // Major (bullish) or minor (bearish)
     const t = data.tone !== undefined ? data.tone : 1;
@@ -47,10 +59,17 @@ const oracleTrack = {
     // Direction follows the price curve
     const dir = pm >= 0 ? 'up' : 'down';
 
+    // Return cached pattern if musical output hasn't changed —
+    // the audio engine uses object identity to skip unnecessary .play() calls
+    const key = `${dir}:${num}:${scaleName}`;
+    if (this._cachedPattern && this._cachedKey === key) {
+      return this._cachedPattern;
+    }
+
     // Volume scales with movement size
     const vol = 0.02 + mag * 0.04;
 
-    return mini(this._runs[dir][num])
+    const result = mini(this._runs[dir][num])
       .n().scale(scaleName)
       .sound("piano")
       .gain(rand.range(vol * 0.8, vol * 1.2))
@@ -58,14 +77,13 @@ const oracleTrack = {
       .room(0.5)
       .clip(2)
       .cpm(12);
+
+    this._cachedPattern = result;
+    this._cachedKey = key;
+    return result;
   },
 
-  onEvent(type) {
-    if (type === 'spike') {
-      return note("c6").sound("piano").gain(0.02).room(0.7);
-    }
-    return null;
-  },
+  onEvent() { return null; },
 };
 
 audioEngine.registerTrack('oracle', oracleTrack);
