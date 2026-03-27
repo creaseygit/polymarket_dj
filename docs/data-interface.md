@@ -9,7 +9,7 @@ The server pushes **normalized market data** to each connected browser client vi
 | `heat`        | 0.0 – 1.0 | Composite market activity (velocity, trade rate, volume, spread)    |
 | `price`       | 0.0 – 1.0 | Current price (WS bid/ask midpoint preferred, Gamma API fallback)   |
 | `price_delta` | -1.0 – 1.0| Per-cycle (3s) price change, sensitivity-adjusted. Signed: +ve = up, -ve = down. Normalized so raw 10¢ → magnitude 1.0 |
-| `price_move`  | -1.0 – 1.0| Edge-detected rolling price change. Uses 30s window but only emits non-zero when movement is *actively increasing* or direction flips. Zero when price is flat (even if it recently moved). Sensitivity-adjusted. Signed. Normalized so raw 5¢ → magnitude 1.0 |
+| `price_move`  | -1.0 – 1.0| Edge-detected rolling price change. Uses 30s window but only emits non-zero when movement is *actively increasing* or direction flips. Zero when price is flat (even if it recently moved). Edge detection runs on raw values; sensitivity is applied after. Signed. Normalized so raw 3¢ → magnitude 1.0 |
 | `velocity`    | 0.0 – 1.0 | Price velocity (first derivative, 5-min window average)             |
 | `trade_rate`  | 0.0 – 1.0 | Trades per minute, normalized                                       |
 | `spread`      | 0.0 – 1.0 | Bid-ask spread, normalized (raw 0–0.3 → 0–1)                        |
