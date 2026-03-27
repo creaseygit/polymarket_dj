@@ -1,12 +1,13 @@
 // ── Jazz Alerts ──────────────────────────────────────────
-// Jazz trio backing (drums, walking bass) with Oracle-style
-// reactive piano chords. 100 BPM. Subtle brushwork, walking
-// bass follows I-vi-ii-V (major) or i-iv-v-i (minor).
-// Piano plays 7th-chord voicings on price movement.
+// Jazz trio: spang-a-lang ride, feathered kick, ghost-note
+// snare comping, walking bass with chromatic approaches,
+// Oracle-style piano 7th chords on price movement. 100 BPM.
+// Major: I-vi-ii-V (Cmaj7-Am7-Dm7-G7)
+// Minor: i-iv-v-i (Am7-Dm7-Em7-Am7)
 // category: 'music', label: 'Jazz Alerts'
 
-// 100 BPM = 25 cycles per minute (1 cycle = 1 bar of 4/4)
-// 8-element grid = 8th notes, 4-element grid = quarter notes
+// 100 BPM = 25 cpm. Triplet grid = 12 elements per cycle.
+// Quarter notes = 4 elements. 8th notes = 8 elements.
 
 const jazzAlertsTrack = (() => {
   let _cachedChordPat = null;
@@ -35,117 +36,158 @@ const jazzAlertsTrack = (() => {
 
       const layers = [];
 
-      // ── JAZZ DRUMS ──
+      // ── RIDE CYMBAL (spang-a-lang) ──
+      // Two layers: quarter-note pulse on every beat ("ding ding ding ding")
+      // plus skip notes on the last triplet of beats 2 and 4 ("ga").
+      // Together: ding — ding-ga — ding — ding-ga
 
-      // Ride cymbal: classic jazz pattern (1  &2  3  &4)
-      // 8th-note grid, hits on positions 0,3,4,7
-      const ride = sound("[hh:8 ~ ~ hh:8 hh:8 ~ ~ hh:8]")
-        .speed(rand.range(0.55, 0.75))
-        .gain(rand.range(0.04, 0.07))
-        .hpf(3500)
-        .end(0.12)
-        .room(0.15);
-      layers.push(ride);
+      // Quarter-note ride pulse: all 4 beats, moderate volume
+      // Low speed + longer end = washy, ride-like sustain
+      layers.push(
+        sound("[hh:8 hh:8 hh:8 hh:8]")
+          .speed(rand.range(0.5, 0.65))
+          .gain(rand.range(0.07, 0.10))
+          .end(0.18)
+          .room(0.12)
+      );
 
-      // Hi-hat foot: beats 2 and 4 (tight pedal)
-      // 8th-note grid, positions 2 and 6
-      const hihatFoot = sound("[~ ~ hh:0 ~ ~ ~ hh:0 ~]")
-        .speed(2.0)
-        .gain(0.025 + h * 0.01)
-        .end(0.02)
-        .hpf(5000);
-      layers.push(hihatFoot);
+      // Skip notes: 12-element triplet grid, positions 5 and 11
+      // (last triplet of beats 2 and 4) — softer than the main pulse
+      layers.push(
+        sound("[~ ~ ~ ~ ~ hh:8 ~ ~ ~ ~ ~ hh:8]")
+          .speed(rand.range(0.55, 0.7))
+          .gain(rand.range(0.04, 0.07))
+          .end(0.10)
+          .room(0.12)
+      );
 
-      // Kick: beat 1 only, ghosted
-      const kick = sound("[bd:3 ~ ~ ~ ~ ~ ~ ~]")
-        .speed(0.7)
-        .gain(0.05 + h * 0.02)
-        .lpf(150)
-        .degradeBy(0.15);
-      layers.push(kick);
+      // ── HI-HAT FOOT ──
+      // Beats 2 and 4: tight "chick" — the backbone everyone listens for
+      layers.push(
+        sound("[~ hh:0 ~ hh:0]")
+          .speed(2.2)
+          .gain(0.05 + h * 0.015)
+          .end(0.015)
+          .hpf(6000)
+      );
 
-      // Snare ghost notes: very quiet brush-like taps
-      // 8th-note grid, heavy degradeBy for sparse hits
-      const ghostSnare = sound("[~ sd:1 ~ sd:1 ~ sd:1 ~ sd:1]")
-        .speed(rand.range(1.3, 1.7))
-        .gain(rand.range(0.012, 0.03))
-        .end(0.03)
-        .hpf(2500)
-        .room(0.08)
-        .degradeBy(0.55);
-      layers.push(ghostSnare);
+      // ── FEATHERED KICK ──
+      // All 4 quarter notes, barely audible — felt not heard
+      // Locks with the walking bass pulse
+      layers.push(
+        sound("[bd:3 bd:3 bd:3 bd:3]")
+          .speed(0.65)
+          .gain(0.025 + h * 0.01)
+          .lpf(120)
+          .degradeBy(0.1)
+      );
+
+      // ── SNARE GHOST NOTES ──
+      // Comping on triplet partials between ride hits
+      // 12-element triplet grid, heavy degradeBy = conversational, never metronomic
+      // Positions 1,2,4,7,8,10 = all the gaps between ride notes
+      layers.push(
+        sound("[~ sd:1 sd:1 ~ sd:1 ~ ~ sd:1 sd:1 ~ sd:1 ~]")
+          .speed(rand.range(1.4, 1.8))
+          .gain(rand.range(0.012, 0.028))
+          .end(0.025)
+          .hpf(2000)
+          .room(0.06)
+          .degradeBy(0.65)
+      );
 
       // ── WALKING BASS ──
-      // Quarter-note walks outlining chord tones
-      // Last note of each bar approaches the next chord's root
-      // Major: Cmaj7 → Am7 → Dm7 → G7
-      // Minor: Am7 → Dm7 → Em7 → Am7
+      // Quarter-note walks through chord tones, chromatic approach on beat 4
+      // Sawtooth with warm filter = woody upright bass tone
+      // Major: Cmaj7 → Am7 → Dm7 → G7 (I-vi-ii-V turnaround)
+      // Minor: Am7 → Dm7 → Em7 → Am7 (i-iv-v-i)
       const bassLine = t === 1
         ? cat(
-            "[c2 e2 g2 b1]",     // Cmaj7 — B steps down to A
-            "[a1 c2 e2 d2]",     // Am7   — D approaches Dm
-            "[d2 f2 a2 g2]",     // Dm7   — G approaches G7
-            "[g1 b1 d2 c2]",     // G7    — C turns around to Cmaj7
+            "[c2 d2 e2 gs1]",     // Cmaj7 — scale walk, G# approaches A from below
+            "[a1 b1 c2 cs2]",     // Am7   — ascending, C# approaches D from below
+            "[d2 e2 f2 fs2]",     // Dm7   — ascending, F# approaches G from below
+            "[g1 b1 d2 b1]",      // G7    — arpeggio up, B approaches C from below
           )
         : cat(
-            "[a1 c2 e2 d2]",     // Am7   — D approaches Dm
-            "[d2 f2 a2 e2]",     // Dm7   — E approaches Em
-            "[e2 g2 b2 a2]",     // Em7   — A approaches Am
-            "[a1 e2 c2 b1]",     // Am7   — B steps down to A (turnaround)
+            "[a1 c2 e2 cs2]",     // Am7   — chord tones, C# approaches D
+            "[d2 f2 e2 ds2]",     // Dm7   — root 3rd step-back, D# approaches E
+            "[e2 d2 b1 bb1]",     // Em7   — descending, Bb approaches A from above
+            "[a1 c2 e2 gs1]",     // Am7   — arpeggio, G# approaches A (turnaround)
           );
 
-      const bass = bassLine.note().sound("sawtooth")
-        .gain(0.11 + h * 0.04)
-        .lpf(midiToHz(38 + pr * 18)).lpq(3)
-        .attack(0.02).decay(0.12).sustain(0.5).release(0.1);
-      layers.push(bass);
+      layers.push(
+        bassLine.note().sound("sawtooth")
+          .gain(0.28 + h * 0.07)
+          .lpf(midiToHz(64 + pr * 14)).lpq(2)
+          .attack(0.01).decay(0.15).sustain(0.6).release(0.08)
+      );
 
-      // Sub bass: chord roots, pure sine
+      // Sub bass: chord roots, sine for low-end warmth underneath the walk
       const subRoots = t === 1
         ? "<c2 a1 d2 g1>"
         : "<a1 d2 e2 a1>";
-      const sub = note(subRoots).sound("sine")
-        .gain(0.08 + h * 0.03)
-        .lpf(100)
-        .attack(0.03).decay(0.2).sustain(0.7).release(0.15);
-      layers.push(sub);
+      layers.push(
+        note(subRoots).sound("sine")
+          .gain(0.12 + h * 0.04)
+          .lpf(90)
+          .attack(0.02).decay(0.2).sustain(0.8).release(0.15)
+      );
 
-      // ── ACTIVITY-GATED LAYERS ──
+      // ── ENERGY-RESPONSIVE LAYERS ──
 
-      // Cross-stick on beat 4 when trade rate picks up
-      if (tr > 0.3) {
+      // Cross-stick comping on upbeat triplet partials
+      if (tr > 0.25) {
         layers.push(
-          sound("[~ ~ ~ ~ ~ ~ cb ~]")
-            .speed(2.2).end(0.03)
-            .gain(0.025 + tr * 0.015)
+          sound("[~ ~ cb ~ ~ ~ ~ ~ ~ ~ cb ~]")
+            .speed(2.5).end(0.025)
+            .gain(0.03 + tr * 0.015)
             .pan(0.6)
-            .room(0.08)
+            .room(0.06)
+            .degradeBy(0.4)
         );
       }
 
-      // Extra ride ghost notes when busy
+      // Ride bell accents on 2 and 4 when energy builds
+      // Brighter variant + higher speed = cutting bell tone
+      if (h > 0.5) {
+        layers.push(
+          sound("[~ hh:6 ~ hh:6]")
+            .speed(rand.range(1.1, 1.4))
+            .gain(rand.range(0.03, 0.05))
+            .end(0.06)
+            .hpf(5000)
+            .degradeBy(0.5)
+        );
+      }
+
+      // Louder snare accent on trip-of-2 when very busy
+      // (jazz "bomb" on the snare — punctuating the music)
       if (tr > 0.5) {
         layers.push(
-          sound("[~ hh:8 ~ ~ ~ hh:8 ~ ~]")
-            .speed(rand.range(0.5, 0.65))
-            .gain(rand.range(0.015, 0.035))
-            .hpf(4000).end(0.06)
-            .degradeBy(0.45)
+          sound("[~ ~ ~ ~ ~ sd:1 ~ ~ ~ ~ ~ ~]")
+            .speed(1.2)
+            .gain(0.04 + tr * 0.02)
+            .end(0.04)
+            .room(0.1)
+            .degradeBy(0.35)
         );
       }
 
-      // Brush swirl texture when velocity is high
-      if (v > 0.3) {
+      // Hi-hat foot splash between beats when velocity high
+      // Half-open sound via longer end + lower hpf
+      if (v > 0.4) {
         layers.push(
-          sound("pink").end(0.06)
-            .gain(0.006 + v * 0.004)
-            .hpf(5000)
-            .pan(sine.range(0.3, 0.7).slow(5))
+          sound("[~ ~ ~ ~ ~ ~ hh:0 ~ ~ ~ ~ ~]")
+            .speed(1.5)
+            .gain(0.03 + v * 0.015)
+            .end(0.06)
+            .hpf(3000)
+            .degradeBy(0.5)
         );
       }
 
       // ── PIANO CHORDS (Oracle-style, reactive to price_move) ──
-      // Jazz voicings: 7th chords (root, 3rd, 5th, 7th) instead of triads
+      // Jazz voicings: 7th chords (root, 3rd, 5th, 7th)
       if (mag >= 0.05) {
         const root = t === 1 ? 'C4' : 'A3';
         const scaleType = t === 1 ? 'major' : 'minor';
@@ -192,13 +234,11 @@ const jazzAlertsTrack = (() => {
         const now = Date.now();
         if (now - lastSpikeAt < 15000) return null;
         lastSpikeAt = now;
-        // Soft cymbal swell
         return sound("hh:6")
           .speed(0.4).end(0.25).gain(0.07).room(0.3);
       }
 
       if (type === "price_move") {
-        // Jazz scale run with delay
         const scaleType = t === 1 ? 'major' : 'minor';
         const root = t === 1 ? 'C4' : 'A3';
         const sc = getScaleNotes(root, scaleType, 14, 2);
