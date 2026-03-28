@@ -62,32 +62,32 @@ class MarketScorer:
         """Adaptive trade rate 0–1. Uses log curve relative to a rolling
         baseline so it self-calibrates to any market's activity level.
 
-        - EMA tracks what 'normal' looks like (slow-moving baseline)
+        - EMA tracks what 'normal' looks like (slow-moving baseline, ~5 min half-life)
         - Current rate is compared to baseline: ratio > 1 = busier than usual
         - Log curve compresses the ratio so huge spikes don't just pin at 1.0
-        - Result: 0.5 = baseline activity, >0.5 = above normal, <0.5 = quieter
+        - Result: 0 = no trades, ~0.25 = baseline activity, 0.5 = 3x spike, 0.75 = 7x
         """
         raw = self._raw_trade_rate(market_id, window)
 
-        # Update EMA baseline (~90s half-life: alpha ≈ 0.03 at 3s intervals)
+        # Update EMA baseline (~5 min half-life: alpha ≈ 0.01 at 3s intervals)
         now = time.time()
         dt = now - self._rate_last_t[market_id]
         if self._rate_last_t[market_id] == 0:
             # First call — seed baseline with current rate
-            self._rate_ema[market_id] = max(raw, 1.0)
+            self._rate_ema[market_id] = max(raw, 0.5)
             self._rate_last_t[market_id] = now
         elif dt >= 2.0:
-            alpha = min(1.0, dt / 90.0)  # ~90s to converge
+            alpha = min(1.0, dt / 300.0)  # ~5 min to converge
             self._rate_ema[market_id] += alpha * (raw - self._rate_ema[market_id])
-            self._rate_ema[market_id] = max(self._rate_ema[market_id], 1.0)  # floor
+            self._rate_ema[market_id] = max(self._rate_ema[market_id], 0.5)  # floor
             self._rate_last_t[market_id] = now
 
         baseline = self._rate_ema[market_id]
         # Ratio: 1.0 = at baseline, 2.0 = double, 0.5 = half
         ratio = raw / baseline if baseline > 0 else 0.0
         # Log curve: log2(ratio+1) maps 0→0, 1→1, 3→2, 7→3
-        # Normalise so ratio=1 (baseline) → 0.5, ratio=3 → ~0.8
-        score = math.log2(ratio + 1.0) / 2.5
+        # Normalise so ratio=1 (baseline) → 0.25, ratio=3 → 0.5, ratio=7 → 0.75
+        score = math.log2(ratio + 1.0) / 4.0
         return max(0.0, min(1.0, score))
 
     def spread_score(self, market_id: str) -> float:
