@@ -20,16 +20,20 @@ const audioEngine = (() => {
     const CDN = 'https://strudel.b-cdn.net';
     const DM = `${CDN}/tidal-drum-machines/machines`;
     await initStrudel({
-      prebake: () => Promise.all([
-        samples(`${CDN}/piano.json`, `${CDN}/piano/`, { prebake: true }),
-        samples('github:tidalcycles/dirt-samples'),
-        // VCSL instrument samples (orchestral percussion, etc.)
-        samples(`${CDN}/vcsl.json`, `${CDN}/VCSL/`, { prebake: true }),
-        // Tidal drum machines (Roland TR-808 etc.)
-        samples(`${CDN}/tidal-drum-machines.json`, `${DM}/`, { prebake: true }),
-        // GM soundfonts (acoustic bass, strings, brass, etc.)
-        registerSoundfonts(),
-      ]),
+      prebake: async () => {
+        await Promise.all([
+          samples(`${CDN}/piano.json`, `${CDN}/piano/`, { prebake: true }),
+          samples('github:tidalcycles/dirt-samples'),
+          // VCSL instrument samples (orchestral percussion, etc.)
+          samples(`${CDN}/vcsl.json`, `${CDN}/VCSL/`, { prebake: true }),
+          // Tidal drum machines (Roland TR-808 etc.)
+          samples(`${CDN}/tidal-drum-machines.json`, `${DM}/`, { prebake: true }),
+          // GM soundfonts (acoustic bass, strings, brass, etc.)
+          registerSoundfonts(),
+        ]);
+        // Create short aliases (rd, rim, etc.) from tidal drum machine names
+        await aliasBank(`${CDN}/tidal-drum-machines-alias.json`);
+      },
     });
 
     // Warm up sample buffers — Dirt-Samples index loads during prebake but

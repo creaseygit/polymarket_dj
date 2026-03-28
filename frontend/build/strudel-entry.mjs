@@ -1,15 +1,16 @@
 // Strudel bundle entry point for Polymarket DJ
-// Imports @strudel/web (which sets window.initStrudel and all globals via evalScope)
-// and @strudel/soundfonts (GM soundfonts including gm_acoustic_bass).
+// Imports from @strudel/web SOURCE (web.mjs, not the pre-built dist)
+// so that @strudel/core is shared with @strudel/soundfonts — no duplicate.
 
-// Import everything from @strudel/web — this runs side effects that set up
-// window.initStrudel, Pattern.prototype.play, hush, evaluate, etc.
-// The CDN bundle at unpkg.com/@strudel/web is essentially this dist output.
-import '@strudel/web';
+// Import from the source entry which re-exports individual packages
+export * from '@strudel/web/web.mjs';
 
-// Import soundfonts and expose on window so tracks/audio-engine can use them
+// Import soundfonts and expose on window
 import { registerSoundfonts, setSoundfontUrl, loadSoundfont } from '@strudel/soundfonts';
-
 window.registerSoundfonts = registerSoundfonts;
 window.setSoundfontUrl = setSoundfontUrl;
 window.loadSoundfont = loadSoundfont;
+
+// Import aliasBank for drum machine aliases (rd, rim, etc.)
+import { aliasBank } from 'superdough';
+window.aliasBank = aliasBank;
