@@ -1,70 +1,268 @@
 // ── Late Night in Bb — Jazz Piano Trio ───────────────────
-// Data-wired jazz bar: rhythm section is the ambiance,
-// melody responds to price direction (Oracle-style).
-// Heat controls energy (layer gating + volume scaling).
+// Two paradigms: bullish (Bb major, ascending) / bearish (G minor, descending).
+// Tone selects paradigm; trade_rate + velocity drive complexity.
+// Heat controls overall energy (volume scaling).
 // category: 'music', label: 'Late Night in Bb'
 
 const jazzTrioTrack = (() => {
   let _cachedCode = null;
   let _cachedKey = null;
 
-  // Scale all decimal gain/velocity values in a mini-notation string
+  // ── Chord changes ──
+  // Bullish: ii-V-I-IV in Bb major (bright, resolved to tonic)
+  const BULLISH_CHANGES = "<Cm7 F7 Bb^7 Eb^7 Cm7 F7 Bb^7 Bb^7>";
+  // Bearish: iiø-V-i-iv in G minor (dark, tense, resolves to minor)
+  const BEARISH_CHANGES = "<Am7b5 D7 Gm7 Cm7 Am7b5 D7 Gm7 Gm7>";
+
   function scaleGains(pattern, factor) {
     return pattern.replace(/\d+\.\d+/g, (m) =>
       (parseFloat(m) * factor).toFixed(2)
     );
   }
 
-  // Quantize to reduce cache churn
   function q(v, step) {
     return Math.round(v / step) * step;
   }
 
-  // ── Layer code generators ──────────────────────────────
-  // Each returns a strudel code string fragment.
-  // `energy` is 0.4 (silent market) → 1.0 (full heat).
+  // ── Bass note patterns: BULL_BASS[intBand], BEAR_BASS[intBand] ──
+  // Each is 16 bars (two passes through the 8-bar form).
 
-  function bassCode(energy) {
-    const gains = scaleGains(
-      `<
-      [0.45 0.35 0.35 0.30]
-      [0.45 0.38 0.32 0.30]
-      [0.45 0.35 0.35 0.32]
-      [0.45 0.35 0.35 0.30]
-      [0.45 0.35 0.35 0.30]
-      [0.45 0.38 0.35 0.30]
-      [0.45 0.35 0.32 0.30]
-      [0.42 0.35 0.35 0.30]
-      [0.48 0.35 0.35 0.30]
-      [0.45 0.35 0.32 [0.28 0.25]]
-      [0.48 0.38 0.35 0.32]
-      [0.45 0.35 0.30]
-      [0.42 0.35 0.38 0.32]
-      [0.45 0.38 0.35 [0.28 0.25]]
-      [0.48 0.38 0.30]
-      [0.42 0.35 [0.32 0.28] [0.30 0.28]]
-    >`,
-      energy,
-    );
-    return `
-$: note(\`<
+  // Bullish bass: ascending through chord tones (root→3rd→5th→approach)
+  const BULL_BASS = [
+    // Low: simple ascending quarter notes
+    `<
   [C2 D2 Eb2 E2]
-  [F2 A2 Ab2 Bb2]
-  [Bb2 A2 G2 F2]
-  [Eb2 F2 G2 Ab2]
-  [A2 G2 F2 Eb2]
-  [D2 F#2 A2 Ab2]
-  [G2 F2 Eb2 D2]
-  [C2 Eb2 F2 B1]
-  [G1 Bb1 C2 E2]
-  [F2 Eb2 D2 [A2 Bb2]]
+  [F2 A2 Bb2 A2]
+  [Bb2 C3 D3 D2]
+  [Eb2 F2 G2 Bb2]
+  [C2 Eb2 G2 E2]
+  [F2 G2 A2 Bb2]
   [Bb2 D3 C3 A2]
-  [Eb2@2 F2 Ab2]
-  [C2 Eb2 G2 F2]
-  [D2 A2 F#2 [G#2 A2]]
-  [G2@2 Bb2 A2]
-  [C2 Eb2 [F2 Ab2] [G2 B1]]
->\`)
+  [Bb2 A2 C3 Bb2]
+  [C2 Eb2 F2 E2]
+  [F2 A2 C3 A2]
+  [Bb2 D3 C3 D2]
+  [Eb2 G2 Bb2 B2]
+  [C2 D2 Eb2 E2]
+  [F2 G2 Bb2 A2]
+  [Bb2 C3 D3 Bb2]
+  [Bb2 D3 C3 Bb2]
+>`,
+    // Mid: eighth-note approaches on beat 4
+    `<
+  [C2 Eb2 G2 [Bb2 E2]]
+  [F2 A2 C3 [Bb2 A2]]
+  [Bb2 D3 C3 [Eb3 D2]]
+  [Eb2 G2 Bb2 [A2 B2]]
+  [C2 D2 Eb2 [G2 E2]]
+  [F2 A2 Bb2 [C3 A2]]
+  [Bb2 C3 D3 Bb2]
+  [Bb2 D3 [C3 D3] Bb2]
+  [C2 Eb2 G2 [A2 E2]]
+  [F2 G2 A2 [C3 A2]]
+  [Bb2 D3 C3 [Eb3 D2]]
+  [Eb2 F2 G2 [Bb2 B2]]
+  [C2 D2 [Eb2 G2] E2]
+  [F2 A2 C3 [Bb2 A2]]
+  [Bb2 [C3 D3] C3 A2]
+  [Bb2 C3 [D3 C3] Bb2]
+>`,
+    // High: busy chromatic fills, wider leaps
+    `<
+  [C2 [D2 Eb2] G2 [A2 E2]]
+  [F2 [G2 A2] C3 [Bb2 A2]]
+  [[Bb2 C3] D3 C3 [Eb3 D2]]
+  [Eb2 [F2 G2] Bb2 [A2 B2]]
+  [[C2 Eb2] G2 [Bb2 A2] E2]
+  [[F2 A2] C3 [Bb2 C3] A2]
+  [[Bb2 D3] C3 D3 [Eb3 Bb2]]
+  [Bb2 [C3 D3] [Eb3 D3] Bb2]
+  [C2 [D2 Eb2] G2 [Bb2 E2]]
+  [[F2 G2] A2 [Bb2 C3] A2]
+  [Bb2 [C3 D3] C3 [D3 D2]]
+  [[Eb2 F2] G2 [Ab2 Bb2] B2]
+  [C2 [D2 Eb2] [F2 G2] E2]
+  [F2 [G2 A2] [Bb2 C3] A2]
+  [Bb2 [C3 D3] [C3 D3] Bb2]
+  [[Bb2 D3] [C3 Bb2] [A2 C3] Bb2]
+>`,
+  ];
+
+  // Bearish bass: descending through chord tones (7th→5th→3rd→root)
+  const BEAR_BASS = [
+    // Low: simple descending quarter notes
+    `<
+  [A2 G2 Eb2 D2]
+  [D3 C3 A2 Ab2]
+  [G2 F2 D2 C2]
+  [C3 Bb2 Ab2 Bb2]
+  [A2 Eb2 C2 D2]
+  [D3 A2 F#2 Ab2]
+  [G2 F2 D2 Bb1]
+  [G2 F2 Eb2 D2]
+  [A2 G2 Eb2 D2]
+  [D3 C3 F#2 Ab2]
+  [G2 D2 Bb1 C2]
+  [C3 Bb2 G2 Bb2]
+  [A2 Eb2 C2 D2]
+  [D3 A2 C3 Ab2]
+  [G2 F2 Eb2 D2]
+  [G2 D2 Bb1 G1]
+>`,
+    // Mid: chromatic descending approaches
+    `<
+  [A2 G2 Eb2 [C2 D2]]
+  [D3 C3 A2 [Bb2 Ab2]]
+  [G2 F2 D2 [Eb2 C2]]
+  [C3 Bb2 G2 [A2 Bb2]]
+  [A2 [G2 Eb2] C2 D2]
+  [D3 [C3 A2] F#2 Ab2]
+  [G2 [F2 D2] Bb1 C2]
+  [G2 [Bb2 A2] F2 G2]
+  [A2 G2 [Eb2 C2] D2]
+  [D3 [C3 A2] F#2 [Bb2 Ab2]]
+  [G2 F2 [D2 Bb1] C2]
+  [C3 [Bb2 Ab2] G2 Bb2]
+  [A2 [G2 Eb2] C2 [Eb2 D2]]
+  [D3 C3 [A2 F#2] Ab2]
+  [G2 [F2 D2] [Eb2 C2] D2]
+  [G2 [F2 Eb2] D2 G1]
+>`,
+    // High: fast descending runs
+    `<
+  [[A2 G2] Eb2 C2 [Eb2 D2]]
+  [[D3 C3] A2 F#2 [Bb2 Ab2]]
+  [[G2 F2] D2 Bb1 [Eb2 C2]]
+  [[C3 Bb2] Ab2 G2 [A2 Bb2]]
+  [A2 [G2 Eb2] [C2 Eb2] D2]
+  [[D3 C3] [A2 F#2] C3 Ab2]
+  [G2 [F2 D2] [Bb1 D2] C2]
+  [G2 [Bb2 A2] [F2 Eb2] G1]
+  [[A2 G2] [Eb2 C2] Eb2 D2]
+  [D3 [C3 A2] [F#2 A2] Ab2]
+  [[G2 F2] [D2 Bb1] [C2 Eb2] C2]
+  [C3 [Bb2 Ab2] [G2 Bb2] Bb2]
+  [A2 [G2 Eb2] [C2 D2] [Eb2 D2]]
+  [[D3 C3] [A2 C3] [F#2 A2] Ab2]
+  [[G2 F2] D2 [Bb1 C2] D2]
+  [[G2 F2] [Eb2 D2] [Bb1 C2] G1]
+>`,
+  ];
+
+  // Shared bass gain pattern (16 bars, scaled by energy)
+  const BASS_GAINS = `<
+  [0.45 0.35 0.35 0.30]
+  [0.45 0.38 0.32 0.30]
+  [0.45 0.35 0.35 0.32]
+  [0.45 0.35 0.35 0.30]
+  [0.45 0.35 0.35 0.30]
+  [0.45 0.38 0.35 0.30]
+  [0.45 0.35 0.32 0.30]
+  [0.42 0.35 0.35 0.30]
+  [0.48 0.35 0.35 0.30]
+  [0.45 0.35 0.32 0.30]
+  [0.48 0.38 0.35 0.32]
+  [0.45 0.35 0.30 0.30]
+  [0.42 0.35 0.38 0.32]
+  [0.45 0.38 0.35 0.30]
+  [0.48 0.38 0.30 0.30]
+  [0.42 0.35 0.32 0.30]
+>`;
+
+  // ── Melody note patterns: BULL_MELODY[intBand], BEAR_MELODY[intBand] ──
+  // Each is 8 bars (one pass through the chord form).
+
+  // Bullish: ascending through Bb major over bullish changes
+  //   Cm7 | F7 | Bb^7 | Eb^7 | Cm7 | F7 | Bb^7 | Bb^7
+  const BULL_MELODY = [
+    // Low: sparse, spacious ascending hints
+    `<
+  [C5@2 D5 ~]
+  [A4@3 ~]
+  [Bb4 ~ D5@2]
+  [Eb5@2 G4@2]
+  [C5@2 Eb5 ~]
+  [A4 ~ C5@2]
+  [D5@2 Bb4@2]
+  [Bb4@2 C5@2]
+>`,
+    // Mid: quarter-note ascending climbs through chord tones
+    //   Cm7:  7th→root→9th→b3 ascending
+    //   F7:   3rd→5th→b7 up
+    //   Bb^7: root→3rd→5th ascending
+    //   Eb^7: root→3rd→5th ascending
+    `<
+  [Bb4 C5 D5 Eb5]
+  [A4 C5 Eb5 ~]
+  [Bb4 ~ D5 F5]
+  [Eb4 G4 Bb4 ~]
+  [C5 D5 Eb5 G5]
+  [F4 A4 C5 Eb5]
+  [Bb4 D5 F5 ~]
+  [Bb4 C5 D5 F5]
+>`,
+    // High: eighth-note runs, chromatic approaches
+    `<
+  [Bb4 C5 [Db5 D5] Eb5]
+  [A4 [Bb4 C5] Eb5 ~]
+  [[Bb4 C5] D5 [Eb5 F5] ~]
+  [Eb4 [F4 G4] Bb4 ~]
+  [C5 [D5 Eb5] G5 F5]
+  [[F4 G4] A4 C5 Eb5]
+  [Bb4 [C5 D5] F5 D5]
+  [[Bb4 D5] [C5 Eb5] F5 D5]
+>`,
+  ];
+
+  // Bearish: descending through G minor over bearish changes
+  //   Am7b5 | D7 | Gm7 | Cm7 | Am7b5 | D7 | Gm7 | Gm7
+  const BEAR_MELODY = [
+    // Low: sparse, mournful descending
+    `<
+  [G5@2 Eb5 ~]
+  [F#4@3 ~]
+  [D5@2 Bb4@2]
+  [C5@2 ~ G4]
+  [Eb5@2 C5 ~]
+  [A4@2 F#4@2]
+  [Bb4@3 ~]
+  [D5@2 Bb4@2]
+>`,
+    // Mid: quarter-note descending phrases through chord tones
+    //   Am7b5: b7→b5→b3→root descending arpeggio
+    //   D7:    b7→5th→3rd resolving down
+    //   Gm7:   5th→b3→root settling
+    //   Cm7:   root→b7→5th→b3 continued descent
+    `<
+  [G5 Eb5 C5 A4]
+  [C5 A4 F#4 ~]
+  [D5 Bb4 G4 ~]
+  [C5 Bb4 G4 Eb4]
+  [Eb5 C5 A4 G4]
+  [A4 F#4 D4@2]
+  [Bb4 A4 G4 F4]
+  [D5 Bb4 A4 G4]
+>`,
+    // High: fast descending runs, chromatic passing tones
+    `<
+  [G5 [F5 Eb5] C5 A4]
+  [[C5 Bb4] A4 F#4 ~]
+  [D5 [C5 Bb4] G4 F4]
+  [C5 [Bb4 Ab4] G4 Eb4]
+  [[Eb5 Db5] C5 [Bb4 A4] G4]
+  [A4 [Ab4 F#4] D4 ~]
+  [[Bb4 A4] G4 [F4 Eb4] D4]
+  [D5 [C5 Bb4] [A4 G4] F4]
+>`,
+  ];
+
+  // ── Layer code generators ──
+
+  function bassCode(tone, intBand, energy) {
+    const notes = tone === 1 ? BULL_BASS[intBand] : BEAR_BASS[intBand];
+    const gains = scaleGains(BASS_GAINS, energy);
+    return `
+$: note(\`${notes}\`)
   .s("gm_acoustic_bass")
   .clip(1)
   .gain(\`${gains}\`)
@@ -73,6 +271,24 @@ $: note(\`<
   .room(0.08)
   .speed(rand.range(0.98, 1.02))
   .orbit(3);
+`;
+  }
+
+  function melodyCode(tone, intBand, pmAbs, energy) {
+    const notes = tone === 1 ? BULL_MELODY[intBand] : BEAR_MELODY[intBand];
+    const vel = (0.30 + pmAbs * 0.30).toFixed(2);
+    const velMax = (0.40 + pmAbs * 0.20).toFixed(2);
+    return `
+$: note(\`${notes}\`)
+  .s("piano")
+  .clip(1)
+  .velocity(rand.range(${vel}, ${velMax}))
+  .room(0.25)
+  .roomsize(3)
+  .delay(0.08)
+  .delaytime(0.18)
+  .delayfeedback(0.15)
+  .orbit(2);
 `;
   }
 
@@ -88,18 +304,18 @@ $: s("rd [rd@2 rd] rd [rd@2 rd]")
 `;
   }
 
-  function hihatSimpleCode(energy) {
-    // Just 2 & 4 — minimal hi-hat for low energy
-    const g = (0.25 * energy).toFixed(2);
-    return `
+  function hihatCode(intBand, energy) {
+    if (intBand === 0) {
+      // Simple 2 & 4 only
+      const g = (0.25 * energy).toFixed(2);
+      return `
 $: s("[~ hh ~ hh]")
   .gain(${g})
   .cut(1)
   .orbit(4);
 `;
-  }
-
-  function hihatFullCode(energy) {
+    }
+    // Mid and high: full 8-bar pattern
     const gains = scaleGains(
       `<
       [~ 0.30 ~ 0.24]
@@ -130,16 +346,25 @@ $: s(\`<
 `;
   }
 
-  function compSparseCode(energy) {
-    // Comping on bars 1, 3, 5, 7 only — silent on alternate bars
-    // so the rhythm aligns with the 8-bar chord changes
-    const vel = (0.20 * energy).toFixed(2);
-    const velMax = (0.35 * energy).toFixed(2);
-    return `
-$: chord(changes)
-  .dict("ireal")
-  .voicing()
-  .struct(\`<
+  function compCode(intBand, energy) {
+    let struct, vel, velMax;
+    if (intBand === 0) {
+      // Very sparse: hits on only 2 of 8 bars
+      struct = `<
+    [~ [~@2 x] ~ ~]
+    [~ ~ ~ ~]
+    [~ ~ ~ ~]
+    [~ ~ ~ ~]
+    [~ ~ ~ [~@2 x]]
+    [~ ~ ~ ~]
+    [~ ~ ~ ~]
+    [~ ~ ~ ~]
+  >`;
+      vel = (0.15 * energy).toFixed(2);
+      velMax = (0.25 * energy).toFixed(2);
+    } else if (intBand === 1) {
+      // Mid: syncopated on alternate bars
+      struct = `<
     [~ [~@2 x] ~ [~@2 x]]
     [~ ~ ~ ~]
     [~ x ~ [~@2 x]]
@@ -148,27 +373,12 @@ $: chord(changes)
     [~ ~ ~ ~]
     [[~@2 x] ~ ~ [~@2 x]]
     [~ ~ ~ ~]
-  >\`)
-  .s("piano")
-  .clip(1)
-  .velocity(rand.range(${vel}, ${velMax}))
-  .room(0.25)
-  .roomsize(3)
-  .delay(0.12)
-  .delaytime(0.18)
-  .delayfeedback(0.2)
-  .orbit(1);
-`;
-  }
-
-  function compFullCode(energy) {
-    const vel = (0.25 * energy).toFixed(2);
-    const velMax = (0.45 * energy).toFixed(2);
-    return `
-$: chord(changes)
-  .dict("ireal")
-  .voicing()
-  .struct(\`<
+  >`;
+      vel = (0.20 * energy).toFixed(2);
+      velMax = (0.35 * energy).toFixed(2);
+    } else {
+      // High: dense every bar
+      struct = `<
     [~ [~@2 x] ~ [~@2 x]]
     [[~@2 x] ~ ~ x]
     [~ x ~ [~@2 x]]
@@ -177,7 +387,15 @@ $: chord(changes)
     [~ x ~ [~@2 x]]
     [[~@2 x] ~ ~ [~@2 x]]
     [~ [~@2 x] ~ x]
-  >\`)
+  >`;
+      vel = (0.25 * energy).toFixed(2);
+      velMax = (0.45 * energy).toFixed(2);
+    }
+    return `
+$: chord(changes)
+  .dict("ireal")
+  .voicing()
+  .struct(\`${struct}\`)
   .s("piano")
   .clip(1)
   .velocity(rand.range(${vel}, ${velMax}))
@@ -190,13 +408,15 @@ $: chord(changes)
 `;
   }
 
-  function ghostSnareCode(energy) {
+  function ghostSnareCode(intBand, energy) {
+    // Busier at high intensity (less dropout)
+    const dropout = intBand >= 2 ? 0.25 : 0.50;
     const gMin = (0.05 * energy).toFixed(2);
     const gMax = (0.09 * energy).toFixed(2);
     return `
 $: s("[~@2 sd] ~ [~@2 sd] ~")
   .gain(rand.range(${gMin}, ${gMax}))
-  .sometimesBy(0.35, (x) => x.gain(0))
+  .sometimesBy(${dropout}, (x) => x.gain(0))
   .orbit(4);
 `;
   }
@@ -231,59 +451,7 @@ $: s("<~ ~ ~ ~ ~ ~ ~ [~ ~ [sd ~] [~ ~ sd]]>").gain(0.22).room(0.15).orbit(4);
 `;
   }
 
-  function melodyCode(pm, pmAbs) {
-    // Ascending phrases for price up, descending (original) for price down.
-    // Both voice-lead over the Autumn Leaves changes:
-    //   Cm7 → F7 → BbΔ7 → EbΔ7 → Am7b5 → D7 → Gm7 → [Cm7 F7]
-    //
-    // Ascending: each phrase climbs through chord tones
-    //   Cm7:    Bb4(7th)→C5(root)→D5(9th)→Eb5(3rd)
-    //   F7:     A4(3rd)→C5(5th)→Eb5(7th)
-    //   BbΔ7:   Bb4(root)→D5(3rd)→F5(5th)
-    //   EbΔ7:   Eb4(root)→G4(3rd)→Bb4(5th)
-    //   Am7b5:  C5(b3)→D5(4th)→Eb5(b5)→G5(b7)
-    //   D7:     F#4(3rd)→A4(5th)→C5(b7)
-    //   Gm7:    G4(root)→Bb4(3rd)→D5(5th)
-    //   turn:   Eb4(3rd/Cm)→F4(root/F)→G4(9th)→A4(3rd/F)
-    //
-    // Descending: the original melody (naturally falls through the changes)
-    const ascending = `<
-  [Bb4 C5 D5 Eb5]
-  [A4 C5 Eb5 ~]
-  [Bb4 ~ D5 F5]
-  [Eb4 G4 Bb4 ~]
-  [C5 D5 Eb5 G5]
-  [F#4 A4 C5 ~]
-  [G4 Bb4 D5 ~]
-  [Eb4 F4 G4 A4]
->`;
-    const descending = `<
-  [Eb5 D5 C5 Bb4]
-  [A4@3 ~]
-  [~ D5 C5 Bb4]
-  [G4@3 ~]
-  [C5 Eb5 D5 C5]
-  [A4 F#4 G4@2]
-  [G4@2 Bb4 A4]
-  [G4 F4 Eb4@2]
->`;
-    const melody = pm >= 0 ? ascending : descending;
-    // Velocity scales with price move magnitude
-    const vel = (0.30 + pmAbs * 0.30).toFixed(2);
-    const velMax = (0.40 + pmAbs * 0.20).toFixed(2);
-    return `
-$: note(\`${melody}\`)
-  .s("piano")
-  .clip(1)
-  .velocity(rand.range(${vel}, ${velMax}))
-  .room(0.25)
-  .roomsize(3)
-  .delay(0.08)
-  .delaytime(0.18)
-  .delayfeedback(0.15)
-  .orbit(2);
-`;
-  }
+  // ── Track object ──
 
   return {
     name: "jazz_trio",
@@ -299,55 +467,56 @@ $: note(\`${melody}\`)
       const h = data.heat || 0;
       const pm = data.price_move || 0;
       const pmAbs = Math.abs(pm);
+      const tone = data.tone !== undefined ? data.tone : 1;
+      const tradeRate = data.trade_rate || 0;
+      const vel = data.velocity || 0;
 
       // Quantize for cache stability
       const hQ = q(h, 0.05);
+      // Intensity from trading activity (separate from heat/energy)
+      const rawIntensity = 0.6 * tradeRate + 0.4 * vel;
+      const intensity = Math.max(0.15, Math.min(1.0, rawIntensity));
+      const intBand = intensity < 0.33 ? 0 : intensity < 0.66 ? 1 : 2;
       const pmDir = pmAbs < 0.05 ? 0 : pm > 0 ? 1 : -1;
       const pmMag = q(pmAbs, 0.1);
-      const key = `${hQ}:${pmDir}:${pmMag}`;
+      const key = `${tone}:${intBand}:${hQ}:${pmDir}:${pmMag}`;
 
       if (_cachedCode && _cachedKey === key) return _cachedCode;
 
       // Energy scales volume: 0.4 at rest → 1.0 at full heat
       const energy = 0.4 + hQ * 0.6;
+      const changes = tone === 1 ? BULLISH_CHANGES : BEARISH_CHANGES;
 
       let code = "setcpm(30);\n";
-      code +=
-        'let changes = "<Cm7 F7 Bb^7 Eb^7 Am7b5 D7 Gm7 [Cm7 F7]>";\n';
+      code += `let changes = "${changes}";\n`;
 
       // ── Always on: bass + ride ──
-      code += bassCode(energy);
+      code += bassCode(tone, intBand, energy);
       code += rideCode(energy);
 
-      // ── Hi-hat: simple 2&4 at low energy, full 8-bar pattern when active ──
-      if (hQ > 0.35) {
-        code += hihatFullCode(energy);
-      } else {
-        code += hihatSimpleCode(energy);
+      // ── Hi-hat: scales with intensity ──
+      code += hihatCode(intBand, energy);
+
+      // ── Comping: always on, density scales with intensity ──
+      code += compCode(intBand, energy);
+
+      // ── Ghost snare: mid+ intensity ──
+      if (intBand >= 1) {
+        code += ghostSnareCode(intBand, energy);
       }
 
-      // ── Comping: sparse at medium heat, full at high ──
-      if (hQ > 0.5) {
-        code += compFullCode(energy);
-      } else if (hQ > 0.2) {
-        code += compSparseCode(energy);
-      }
+      // ── Cross-stick: mid+ intensity ──
+      if (intBand >= 1) code += crossStickCode();
 
-      // ── Ghost snare: medium heat ──
-      if (hQ > 0.2) code += ghostSnareCode(energy);
+      // ── Kick bombs: high intensity only ──
+      if (intBand >= 2) code += kickCode(energy);
 
-      // ── Cross-stick: medium-high heat ──
-      if (hQ > 0.4) code += crossStickCode();
-
-      // ── Kick bombs: high heat only ──
-      if (hQ > 0.6) code += kickCode(energy);
-
-      // ── Turnaround fill: high heat only ──
-      if (hQ > 0.6) code += fillCode();
+      // ── Turnaround fill: high intensity only ──
+      if (intBand >= 2) code += fillCode();
 
       // ── Melody: only when price is actively moving ──
-      if (pmAbs > 0.05 && hQ > 0.3) {
-        code += melodyCode(pm, pmAbs);
+      if (pmAbs > 0.05) {
+        code += melodyCode(tone, intBand, pmAbs, energy);
       }
 
       _cachedCode = code;
