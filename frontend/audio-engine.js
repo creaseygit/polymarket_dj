@@ -108,32 +108,44 @@ const audioEngine = (() => {
 
   /**
    * Play (or replace) the current pattern.
-   * Tracks return the same Pattern object when their musical output hasn't
-   * changed. We compare by identity (===) and skip .play() to avoid
-   * restarting Strudel's cyclist on every 3s data push.
+   *
+   * Two modes:
+   * 1. evaluate mode — track has evaluateCode(data) that returns a strudel
+   *    code string.  We pass it to evaluate() which runs it through the
+   *    transpiler exactly like strudel.cc's REPL ($:, setcpm, .orbit, etc.).
+   * 2. pattern mode — track has pattern(data) that returns a Pattern object.
+   *    We call .play() on it directly.
+   *
    * Pass force=true when volume changes or after events to ensure a replay.
    */
   function _playPattern(force) {
     if (!currentTrackDef) return;
 
     try {
+      // ── evaluate mode (preferred for faithful strudel.cc reproduction) ──
+      if (currentTrackDef.evaluateCode) {
+        const code = currentTrackDef.evaluateCode(latestData);
+        if (code && (force || code !== _lastTrackPat)) {
+          evaluate(code);
+          _lastTrackPat = code;
+        }
+        playing = true;
+        return;
+      }
+
+      // ── pattern mode (legacy tracks) ──
       const pat = currentTrackDef.pattern(latestData);
       if (pat) {
         if (force || pat !== _lastTrackPat) {
           pat.gain(masterVolume).play();
           _lastTrackPat = pat;
         }
-        // Same object → pattern is still cycling, no action needed
       } else {
-        // Track wants silence
         if (_lastTrackPat !== null) {
           silence.play();
           _lastTrackPat = null;
         }
       }
-      // Always mark as playing so data updates keep regenerating the pattern.
-      // Otherwise a track that starts silent (e.g. oracle with no movement)
-      // never wakes up when data changes.
       playing = true;
     } catch (e) {
       console.warn('[Audio] Pattern generation error:', e);
