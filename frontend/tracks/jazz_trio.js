@@ -530,6 +530,15 @@ $: s("<~ ~ ~ ~ ~ ~ ~ [~ ~ [sd ~] [~ ~ sd]]>").gain(0.22).room(0.15).orbit(4);
       }
       return null;
     },
+
+    onEventCode(type) {
+      if (type === "spike") {
+        // Play crash once then go silent — <cr:0 ~ ~ ~> plays beat 1 only,
+        // and the next evaluate() call (3s later) drops this pattern entirely.
+        return '$: s("<cr:0 ~ ~ ~>").gain(0.06).room(0.4).orbit(4);';
+      }
+      return null;
+    },
   };
 })();
 

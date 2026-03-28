@@ -191,8 +191,25 @@ const audioEngine = (() => {
     if (eventPat) {
       try {
         if (currentTrackDef.evaluateCode) {
-          // Evaluate-mode: base pattern managed by evaluate(), just play the event
-          eventPat.gain(masterVolume).play();
+          // Evaluate-mode: .play() would replace all $: patterns with just
+          // the event sound.  Instead, re-evaluate the current code with the
+          // event layered in as an extra $: pattern so the base keeps playing.
+          const baseCode = currentTrackDef.evaluateCode(latestData);
+          if (baseCode) {
+            // Build a strudel code snippet for the one-shot event.
+            // onEvent returns a Pattern object — convert to a code string
+            // that plays once then silences itself via degradeBy after 1 cycle.
+            const eventCode = currentTrackDef.onEventCode
+              ? currentTrackDef.onEventCode(msg.event, msg, latestData)
+              : null;
+            if (eventCode) {
+              evaluate(baseCode + '\n' + eventCode);
+            } else {
+              // Fallback: just re-evaluate base (event has no code form)
+              evaluate(baseCode);
+            }
+            _lastTrackPat = null;  // force fresh evaluate on next data push
+          }
         } else if (currentTrackDef.pattern) {
           // Pattern-mode: layer event on top of base pattern
           const base = currentTrackDef.pattern(latestData);
