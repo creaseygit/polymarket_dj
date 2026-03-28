@@ -38,8 +38,8 @@ const audioEngine = (() => {
         sound("cb:0"),
         // Ride cymbals and jazz kit (Dirt-Samples)
         sound("cr:0 cr:1 cr:2 cr:3"),
-        // GM soundfont — upright bass (lazy-loaded from CDN)
-        note("c2 e2 a2 d3").sound("gm_acoustic_bass"),
+        // Synth bass warmup (triangle oscillator — GM soundfonts not in @strudel/web bundle)
+        note("c2 e2 a2 d3").sound("triangle").lpf(500).gain(0),
         // Piano — one sample per ~3 semitones, cover C3-C6 range
         // (Salamander Grand Piano loads a separate .wav per pitch zone)
         note("c3 e3 a3 c4 e4 a4 c5 e5 a5 c6").sound("piano"),

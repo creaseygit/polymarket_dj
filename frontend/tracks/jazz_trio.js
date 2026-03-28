@@ -124,13 +124,13 @@ const jazzTrioTrack = (() => {
           );
 
       layers.push(
-        bassLine.note().sound("gm_acoustic_bass")
+        bassLine.note().sound("triangle")
           .clip(1)
-          .gain(0.20 + h * 0.15)
-          .lpf(500 + pr * 500)
+          .gain(0.18 + h * 0.12)
+          .lpf(400 + pr * 400)
           .hpf(60)
+          .attack(0.008).decay(0.25).sustain(0.6).release(0.15)
           .room(rm * 0.4).rsize(rs)
-          .speed(rand.range(0.98, 1.02))
       );
 
       // ── PIANO COMPING (syncopated jazz voicings) ──
@@ -188,7 +188,7 @@ const jazzTrioTrack = (() => {
       // Cross-stick rim clicks
       if (tr > 0.25) {
         layers.push(
-          sound("~ ~ ~ rim")
+          sound("~ ~ ~ cp")
             .gain(0.015 + tr * 0.015)
             .degradeBy(0.5)
             .room(rm).rsize(rs)
