@@ -27,7 +27,9 @@ const audioEngine = (() => {
           // VCSL instrument samples (orchestral percussion, etc.)
           samples(`${CDN}/vcsl.json`, `${CDN}/VCSL/`, { prebake: true }),
           // Tidal drum machines (Roland TR-808 etc.)
-          samples(`${CDN}/tidal-drum-machines.json`, `${DM}/`, { prebake: true }),
+          samples(`${CDN}/tidal-drum-machines.json`, `${DM}/`, { prebake: true, tag: 'drum-machines' }),
+          // uzu-drumkit — default drum sounds: rd (ride), rim (rimshot), etc.
+          samples(`${CDN}/uzu-drumkit.json`, `${CDN}/uzu-drumkit/`, { prebake: true, tag: 'drum-machines' }),
           // GM soundfonts (acoustic bass, strings, brass, etc.)
           registerSoundfonts(),
         ]);
