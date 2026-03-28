@@ -1,38 +1,58 @@
 # Writing Tracks
 
-Tracks are JavaScript files in `frontend/tracks/` that use Strudel (`@strudel/web`) to generate audio in the browser. Each track is an object that receives market data and returns a Strudel pattern.
+Tracks are JavaScript files in `frontend/tracks/` that use Strudel (`@strudel/web` + `@strudel/soundfonts`) to generate audio in the browser. Each track is an object that receives market data and produces audio via one of two modes.
 
-## Track Interface
+## Track Modes
+
+### Evaluate mode (preferred for faithful strudel.cc reproduction)
+
+The track provides an `evaluateCode(data)` method that returns a strudel code **string**. The audio engine passes it to strudel's `evaluate()` function — the same code path strudel.cc's REPL uses. This handles `$:` pattern labels, `setcpm()`, `.orbit()` isolation, and the transpiler identically.
 
 ```javascript
 const myTrack = {
   name: "my_track",
   label: "My Track",
-  category: "music",  // "music" (continuous) or "alert" (reactive)
+  category: "music",
+
+  init() {},
+
+  evaluateCode(data) {
+    // Return raw strudel code — identical to what you paste into strudel.cc.
+    // Use string interpolation to inject data values.
+    return `
+      setcpm(30);
+      $: note("c4 e4 g4").s("piano").gain(${0.2 + (data.heat || 0.3) * 0.3})
+      $: s("bd sd bd sd").gain(0.3).orbit(1)
+    `;
+  },
+
+  onEvent() { return null; },
+};
+
+audioEngine.registerTrack("my_track", myTrack);
+```
+
+### Pattern mode (legacy)
+
+The track provides a `pattern(data)` method that returns a Strudel Pattern object directly. Simpler but doesn't support `$:`, `setcpm()`, or `.orbit()` — patterns must be combined with `stack().cpm()`.
+
+```javascript
+const myTrack = {
+  name: "my_track",
+  label: "My Track",
+  category: "music",
 
   init() {},
 
   pattern(data) {
-    // Called every 3s with market data. Return a Strudel Pattern or null (silence).
     const h = data.heat || 0.3;
-
     return stack(
-      // bass — chord roots cycle via <>
-      note("<c2 c2 f2 g2>").sound("sawtooth")
-        .lpf(400).gain(0.3 + h * 0.2),
-
-      // kick & snare
+      note("<c2 c2 f2 g2>").sound("sawtooth").lpf(400).gain(0.3 + h * 0.2),
       sound("bd_fat").struct("x ~ x ~").gain(0.4),
-      sound("sn_dub").struct("~ x ~ ~").gain(0.15).room(0.5),
-
-      // piano melody
-      note("c4 eb4 g4 ~ c4 ~ bb3 g3").sound("piano")
-        .gain(0.3).room(0.3)
-    ).cpm(20);  // 80 BPM (= 20 cycles per minute)
+    ).cpm(20);
   },
 
   onEvent(type, msg, data) {
-    // One-shot events. Return a Pattern to layer on top, or null.
     if (type === "spike") return sound("drum_cymbal_soft").gain(0.1).room(0.6);
     return null;
   },
@@ -41,7 +61,7 @@ const myTrack = {
 audioEngine.registerTrack("my_track", myTrack);
 ```
 
-**Key principle: patterns are regenerated, not mutated.** The `pattern(data)` function is called fresh every 3 seconds with new data. It produces a new Pattern object each time. Calling `.play()` on a new pattern seamlessly swaps it on Strudel's singleton cyclist — the cycle position is preserved, not reset.
+**Key principle: patterns are regenerated, not mutated.** Both modes are called fresh every 3 seconds with new data.
 
 **Critical rules for stable, musical output:**
 
@@ -106,18 +126,21 @@ Tracks are **auto-discovered and dynamically loaded** — no `index.html` change
 
 ## Sounds
 
-Tracks use Strudel's built-in oscillators, sampled instruments, and two loaded sample libraries:
+Tracks use Strudel's built-in oscillators, sampled instruments, and multiple loaded sample libraries:
 
 1. **Salamander Grand Piano** (`"piano"`) — Multi-velocity acoustic grand piano from CDN
 2. **Dirt-Samples** — 200+ sample banks from TidalCycles (drums, cymbals, percussion)
-
-**Note:** GM Soundfonts (`gm_*`) are NOT available — `@strudel/web` CDN bundle has `registerSoundfonts()` commented out and doesn't include the `sfumato` engine. Use oscillators with filtering instead (e.g. `triangle` + `.lpf(500)` for upright bass).
+3. **uzu-drumkit** — Default drum sounds: `bd`, `sd`, `hh`, `oh`, `cr`, `rd` (ride), `rim` (rimshot), `cp`, `cb`, `ht`, `mt`, `lt`
+4. **VCSL** — Orchestral percussion (CC0 license)
+5. **Tidal Drum Machines** — Classic drum machine samples (TR-808, LinnDrum, etc.)
+6. **GM Soundfonts** (`"gm_*"`) — 128 General MIDI instruments via `@strudel/soundfonts` (loaded from webaudiofontdata CDN on demand)
 
 ```javascript
 note("c4 e4 g4").sound("piano").gain(0.3).room(0.5)        // acoustic piano
-note("c2 e2 a2").sound("triangle").lpf(500).gain(0.2)      // synth upright bass
+note("c2 e2 a2").sound("gm_acoustic_bass").gain(0.3)       // GM upright bass
 note("<c2 f2>").sound("sawtooth").lpf(200).gain(0.1)        // synth oscillator
-sound("cr:0").speed(0.95).gain(0.06).end(0.3)               // ride cymbal
+sound("rd").gain(0.25)                                       // ride cymbal (uzu-drumkit)
+sound("cr:0").speed(0.95).gain(0.06).end(0.3)               // crash cymbal (Dirt-Samples)
 ```
 
 ## Sound Reference
@@ -127,15 +150,24 @@ sound("cr:0").speed(0.95).gain(0.06).end(0.3)               // ride cymbal
 | Sound | Usage | Notes |
 | --- | --- | --- |
 | `"piano"` | `.sound("piano")` | Salamander Grand Piano (CDN). Multi-velocity, ~3 semitones per sample |
+| `"gm_acoustic_bass"` | `.sound("gm_acoustic_bass")` | GM upright bass soundfont. Use with `note()` for walking bass lines |
+| `"gm_epiano1"` | `.sound("gm_epiano1")` | GM Rhodes-style electric piano |
+| `"gm_vibraphone"` | `.sound("gm_vibraphone")` | GM vibraphone |
+| `"gm_tenor_sax"` | `.sound("gm_tenor_sax")` | GM tenor saxophone |
 
-### Drum Samples (Dirt-Samples)
+### Drum Samples (Dirt-Samples + uzu-drumkit)
 
-| Sound | Usage | Notes |
-| --- | --- | --- |
-| `"bd"` | `.sound("bd")` | Kick drum (24 variants via `bd:0`–`bd:23`) |
-| `"sd"` | `.sound("sd")` | Snare drum (2 variants) |
-| `"hh"` | `.sound("hh")` | Closed hi-hat (13 variants) |
-| `"cr"` | `.sound("cr")` | **Ride cymbal** (6 variants `cr:0`–`cr:5`). Use for ride patterns |
+| Sound | Source | Usage | Notes |
+| --- | --- | --- | --- |
+| `"bd"` | uzu-drumkit / Dirt | `.sound("bd")` | Kick drum (Dirt-Samples has 24 variants via `bd:0`–`bd:23`) |
+| `"sd"` | uzu-drumkit / Dirt | `.sound("sd")` | Snare drum |
+| `"hh"` | uzu-drumkit / Dirt | `.sound("hh")` | Closed hi-hat |
+| `"oh"` | uzu-drumkit / Dirt | `.sound("oh")` | Open hi-hat |
+| `"rd"` | uzu-drumkit | `.sound("rd")` | **Ride cymbal**. Default strudel ride |
+| `"rim"` | uzu-drumkit | `.sound("rim")` | **Rimshot / cross-stick** |
+| `"cr"` | uzu-drumkit / Dirt | `.sound("cr")` | Crash cymbal (Dirt-Samples has 6 variants `cr:0`–`cr:5`) |
+| `"cp"` | uzu-drumkit / Dirt | `.sound("cp")` | Hand clap |
+| `"cb"` | uzu-drumkit / Dirt | `.sound("cb")` | Cowbell |
 | `"ho"` | `.sound("ho")` | Open hi-hat (6 variants) |
 | `"cc"` | `.sound("cc")` | Crash cymbal (6 variants) |
 | `"cb"` | `.sound("cb")` | Cowbell |
@@ -212,13 +244,13 @@ note("c3 ~ e3 ~ g3").sound("sine")  // ~ = silence
 Piano chord alert that fires on price moves. Uses `price_move` (edge-detected, only non-zero during active movement): magnitude sets chord count (2-5), sign sets direction (ascending=up, descending=down). Silent when price is flat. C major when bullish (tone=1), A minor when bearish (tone=0). Uses pre-defined triad chord runs via polyphonic mini-notation `[deg,deg+2,deg+4]`.
 
 ### jazz_alerts.js
-Jazz trio with reactive piano. 100 BPM (cpm 25). All acoustic samples: ride cymbal (`cr` samples, 2-layer spang-a-lang), walking upright bass (triangle synth + LPF), Salamander grand piano voicings. Ride uses quarter-note pulse on all 4 beats plus triplet skip notes on beats 2 and 4 (12-element grid). Hi-hat foot chicks on 2 and 4. Feathered kick barely audible. Snare ghost notes on triplet partials (65% `degradeBy`). Bass walks chord tones with chromatic approaches — Cmaj7→Am7→Dm7→G7 (major) or Am7→Dm7→Em7→Am7 (minor). Piano 7th-chord voicings trigger on `price_move`. Energy-gated: cross-stick, ride bell (`cr:3` high speed), snare bombs, hi-hat splashes. Consistent room reverb across all layers for cohesive acoustic space.
+Jazz trio with reactive piano. 100 BPM (cpm 25). All acoustic samples: ride cymbal (`cr` samples, 2-layer spang-a-lang), walking upright bass (`gm_acoustic_bass` GM soundfont), Salamander grand piano voicings. Ride uses quarter-note pulse on all 4 beats plus triplet skip notes on beats 2 and 4 (12-element grid). Hi-hat foot chicks on 2 and 4. Feathered kick barely audible. Snare ghost notes on triplet partials (65% `degradeBy`). Bass walks chord tones with chromatic approaches — Cmaj7→Am7→Dm7→G7 (major) or Am7→Dm7→Em7→Am7 (minor). Piano 7th-chord voicings trigger on `price_move`. Energy-gated: cross-stick, ride bell (`cr:3` high speed), snare bombs, hi-hat splashes. Consistent room reverb across all layers for cohesive acoustic space.
 
 ### mezzanine.js
 Massive Attack trip-hop, 80 BPM. Am → Am → Fm → Gm progression (4-bar cycle). Half-time beat: kick on 1 and "and" of 2 (`bd:3`), snare on 3 only (`sd:1`), 8th-note hi-hats with `degradeBy` for human feel. Deep saw bass with root-fifth phrases, sub bass (sine) on roots. Pad triads (triangle + reverb), vinyl hiss. Activity-gated: open hat, ghost kicks, dub echo stab (delay/feedback), cowbell rim clicks. Tone switches between natural minor (bullish) and darker voicings (bearish). Events trigger piano arpeggios and cymbal crashes.
 
 ### jazz_trio.js
-Jazz piano trio over Autumn Leaves changes, 120 BPM (cpm 30). Ride cymbal (`cr` 2-layer spang-a-lang), walking upright bass (triangle synth + LPF), Salamander grand piano comping and melody. 16-bar walking bass (two choruses with variations). 8-bar syncopated comping with rootless voicings (3rd, 5th, 7th) embedded directly in mini-notation rhythms. **Directional price expression**: `price_move` sign drives ascending/descending scale runs in both single-note melody and 7th-chord voicings (Oracle-style `getScaleNotes` approach). Magnitude controls run length (2-8 melody notes, 2-5 chords). Bb major (tone=1) or G minor (tone=0) — full progression switch across bass, comping, and directional layers. **Activity scaling**: all layer gains scale with `heat` — very quiet at low activity, full energy at high. Energy-gated layers add complexity progressively: ghost snare (h>0.2), cross-stick (tr>0.25), ride bell (h>0.5), snare bombs (tr>0.5), hi-hat splashes (v>0.4), kick bombs (h>0.6), turnaround fill (h>0.7). `spread` controls room reverb spaciousness. `price` controls bass LPF brightness. Comping gain ducks when directional layers are active.
+Jazz piano trio over Autumn Leaves A-section changes, 120 BPM. **Uses evaluate mode** — the exact strudel.cc code is passed to `evaluate()` with zero translation. Cm7→F7→BbΔ7→EbΔ7→Am7b5→D7→Gm7→turnaround. Piano comping uses `chord().dict("ireal").voicing()` with 8 unique syncopated rhythms. Melody is the original 8-bar jazz head. Walking bass (`gm_acoustic_bass` GM soundfont) has 16 bars (two choruses with variations). Ride cymbal (`rd`) spang-a-lang pattern, 8-bar hi-hat, jazz kick bombs, ghost snare brushes, cross-stick rim clicks, turnaround fill. All layers use `.orbit()` for audio bus isolation. Currently Stage 1 (no data wiring) — plays identically to strudel.cc.
 
 ## Legacy References
 

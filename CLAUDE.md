@@ -36,8 +36,8 @@ CloudFlare → Nginx → Python aiohttp (data only) ←→ Polymarket APIs
 3. `polymarket/scorer.py` — `MarketScorer` computes heat score (0-1) from price velocity, trade rate, volume, spread
 4. `mixer/mixer.py` — `AutonomousDJ` manages market list, live finance auto-rotation. Events dispatched via async callback (no OSC)
 5. `server.py` `broadcast_loop` — Per-client: normalizes raw data to 0–1, applies sensitivity power curve (`4^(1-2s)`), detects events, pushes JSON via WebSocket every 3s
-6. `frontend/audio-engine.js` — Strudel bridge: init, track lifecycle, data→pattern routing
-7. Track `.js` files — Self-contained Strudel tracks that return patterns from `pattern(data)` method
+6. `frontend/audio-engine.js` — Strudel bridge: init, track lifecycle, data→pattern routing. Two track modes: `evaluateCode(data)` runs raw strudel code via `evaluate()` (identical to strudel.cc REPL); `pattern(data)` returns a Pattern object directly
+7. Track `.js` files — Self-contained Strudel tracks. Evaluate-mode tracks return strudel code strings; pattern-mode tracks return Pattern objects
 
 ## Key Files
 
@@ -50,11 +50,12 @@ CloudFlare → Nginx → Python aiohttp (data only) ←→ Polymarket APIs
 | `polymarket/websocket.py` | CLOB WebSocket feed. First message is a list (book snapshot), not a dict                                             |
 | `polymarket/scorer.py`    | Heat scoring: `price_velocity * 0.35 + trade_rate * 0.40 + volume * 0.15 + spread * 0.10`                           |
 | `mixer/mixer.py`          | `AutonomousDJ` — market selection via `pin_market()`, `_primary_asset()`, live finance auto-rotation                 |
-| `frontend/index.html`     | Main page HTML, loads Strudel from CDN                                                                                |
+| `frontend/index.html`     | Main page HTML, loads custom Strudel bundle                                                                           |
 | `frontend/app.js`         | UI logic: browse tabs, market picker, sliders, now-playing display, dynamic track loader                              |
 | `frontend/ws-client.js`   | WebSocket client with auto-reconnect                                                                                  |
-| `frontend/audio-engine.js`| Strudel init, track registry, pattern lifecycle (AudioContext suspend/resume), silence handling, music theory utils    |
-| `frontend/tracks/*.js`    | Track files (auto-discovered, dynamically loaded): `oracle.js` (alert piano chords), `mezzanine.js` (trip-hop), `jazz_alerts.js` (jazz trio + alert piano), `jazz_trio.js` (Autumn Leaves jazz trio, directional price movement). Drop a new `.js` file here and restart the server — no other changes needed |
+| `frontend/audio-engine.js`| Strudel init, track registry, pattern lifecycle (two modes: `evaluate` for raw strudel code, `pattern` for Pattern objects), music theory utils |
+| `frontend/tracks/*.js`    | Track files (auto-discovered, dynamically loaded): `oracle.js` (alert piano chords), `mezzanine.js` (trip-hop), `jazz_alerts.js` (jazz trio + alert piano), `jazz_trio.js` (Autumn Leaves jazz trio via evaluate). Drop a new `.js` file here and restart the server — no other changes needed |
+| `frontend/build/`         | npm build for custom Strudel bundle (`@strudel/web` + `@strudel/soundfonts`). Run `cd frontend/build && npm run build` to regenerate `frontend/strudel-bundle.js` |
 | `deploy/`                 | Nginx config, systemd service, EC2 setup script                                                                       |
 
 ## Tech Stack
@@ -62,7 +63,7 @@ CloudFlare → Nginx → Python aiohttp (data only) ←→ Polymarket APIs
 - Python 3.12, asyncio, aiohttp (web server + WebSocket)
 - websockets (Polymarket CLOB feed)
 - requests (Gamma REST API)
-- Strudel (browser audio synthesis — AGPL-3.0, TidalCycles-inspired patterns)
+- Strudel 1.3.0 (browser audio synthesis — AGPL-3.0, TidalCycles-inspired patterns). Custom esbuild bundle includes `@strudel/web` + `@strudel/soundfonts` (GM instruments)
 - AWS Lightsail (us-east-1, $5/mo 1GB plan) + Nginx + CloudFlare
 
 ## Detailed Documentation Index
