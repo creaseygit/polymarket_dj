@@ -11,6 +11,7 @@ const oracleTrack = {
   name: 'oracle',
   label: 'Oracle',
   category: 'alert',
+  cpm: 40,
 
   _cachedPattern: null,
   _cachedKey: null,

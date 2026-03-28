@@ -13,6 +13,7 @@ const myTrack = {
   name: "my_track",
   label: "My Track",
   category: "music",
+  cpm: 30,  // cycles per minute — must match setcpm() in evaluateCode
 
   init() {},
 
@@ -41,6 +42,7 @@ const myTrack = {
   name: "my_track",
   label: "My Track",
   category: "music",
+  cpm: 20,  // cycles per minute — must match .cpm() in pattern
 
   init() {},
 
@@ -63,15 +65,21 @@ audioEngine.registerTrack("my_track", myTrack);
 
 **Key principle: patterns are regenerated, not mutated.** Both modes are called fresh every 3 seconds with new data.
 
+**Key principle: music is never interrupted mid-bar.** The audio engine buffers incoming data and defers pattern rebuilds to the next **cycle boundary** (downbeat). Tracks must declare their `cpm` so the engine can calculate timing.
+
 **Critical rules for stable, musical output:**
 
-1. **Never use `Math.random()`** in `pattern()`. JS randomness produces different values on each 3-second rebuild, making the music chaotic. Use Strudel's cycle-deterministic randomness instead: `degradeBy()`, `rand.range()`, `sometimes()`.
+1. **Declare `cpm` on every track.** The audio engine uses this to calculate cycle boundaries for data buffering. Without `cpm`, updates apply immediately (no boundary alignment).
 
-2. **Use `<>` mini-notation for progressions**, not JS counters. `note("<a2 a2 f2 g2>")` cycles one value per bar based on the Strudel cycle position — stable across rebuilds.
+2. **Never use `Math.random()`** in `pattern()`. JS randomness produces different values on each 3-second rebuild, making the music chaotic. Use Strudel's cycle-deterministic randomness instead: `degradeBy()`, `rand.range()`, `sometimes()`.
 
-3. **`struct()` already defines subdivision.** A 16-element struct gives 16th notes natively. Do NOT add `fast()` on top of struct patterns — that creates 64th notes.
+3. **Use `<>` mini-notation for progressions**, not JS counters. `note("<a2 a2 f2 g2>")` cycles one value per bar based on the Strudel cycle position — stable across rebuilds.
 
-4. **Use data values only for parameters** (gain, filter cutoff) and structural decisions (which layers to include). The pattern *structure* (rhythms, note sequences) should be Strudel mini-notation, not JS-computed.
+4. **`struct()` already defines subdivision.** A 16-element struct gives 16th notes natively. Do NOT add `fast()` on top of struct patterns — that creates 64th notes.
+
+5. **Use data values only for parameters** (gain, filter cutoff) and structural decisions (which layers to include). The pattern *structure* (rhythms, note sequences) should be Strudel mini-notation, not JS-computed.
+
+6. **Keep the `$:` block count constant** (evaluate-mode tracks). Strudel assigns positional IDs to anonymous `$:` patterns. If blocks are conditionally omitted, IDs shift and patterns get mismatched on transitions. Instead, always emit every `$:` block and use `$: silence;` as a placeholder when a layer is inactive.
 
 ## Data Received
 

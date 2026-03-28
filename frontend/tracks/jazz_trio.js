@@ -457,6 +457,7 @@ $: s("<~ ~ ~ ~ ~ ~ ~ [~ ~ [sd ~] [~ ~ sd]]>").gain(0.22).room(0.15).orbit(4);
     name: "jazz_trio",
     label: "Late Night in Bb",
     category: "music",
+    cpm: 30,
 
     init() {
       _cachedCode = null;
@@ -500,24 +501,25 @@ $: s("<~ ~ ~ ~ ~ ~ ~ [~ ~ [sd ~] [~ ~ sd]]>").gain(0.22).room(0.15).orbit(4);
       // ── Comping: always on, density scales with intensity ──
       code += compCode(intBand, energy);
 
-      // ── Ghost snare: mid+ intensity ──
-      if (intBand >= 1) {
-        code += ghostSnareCode(intBand, energy);
-      }
+      // ── Conditional layers: always emit $: blocks to keep positional
+      //    IDs stable (silent placeholder when inactive).  This prevents
+      //    Strudel's anonymous $: indexing from shifting when layers
+      //    appear/disappear, which would cause pattern mismatches mid-cycle.
 
-      // ── Cross-stick: mid+ intensity ──
-      if (intBand >= 1) code += crossStickCode();
+      // Ghost snare: mid+ intensity
+      code += intBand >= 1 ? ghostSnareCode(intBand, energy) : '\n$: silence;\n';
 
-      // ── Kick bombs: high intensity only ──
-      if (intBand >= 2) code += kickCode(energy);
+      // Cross-stick: mid+ intensity
+      code += intBand >= 1 ? crossStickCode() : '\n$: silence;\n';
 
-      // ── Turnaround fill: high intensity only ──
-      if (intBand >= 2) code += fillCode();
+      // Kick bombs: high intensity only
+      code += intBand >= 2 ? kickCode(energy) : '\n$: silence;\n';
 
-      // ── Melody: only when price is actively moving ──
-      if (pmAbs > 0.05) {
-        code += melodyCode(tone, intBand, pmAbs, energy);
-      }
+      // Turnaround fill: high intensity only
+      code += intBand >= 2 ? fillCode() : '\n$: silence;\n';
+
+      // Melody: only when price is actively moving
+      code += pmAbs > 0.05 ? melodyCode(tone, intBand, pmAbs, energy) : '\n$: silence;\n';
 
       _cachedCode = code;
       _cachedKey = key;

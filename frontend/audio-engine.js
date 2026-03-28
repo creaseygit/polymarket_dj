@@ -12,6 +12,15 @@ const audioEngine = (() => {
   let latestData = {};
   let _lastTrackPat = null;  // track pattern identity — skip .play() when unchanged
 
+  // ── Cycle-boundary buffering ──
+  // Data/events/volume changes are buffered and applied at the next cycle
+  // boundary so that pattern rebuilds never interrupt music mid-bar.
+  let _pendingData = null;       // market data waiting for next boundary
+  let _pendingEvents = [];       // events waiting for next boundary
+  let _boundaryTimer = null;     // setTimeout handle
+  let _playEpoch = 0;            // AudioContext time when playback started
+  let _forceNextPlay = false;    // force pattern rebuild at next boundary
+
   // Track registry — populated by track files calling audioEngine.registerTrack()
   const trackRegistry = {};
 
@@ -101,6 +110,18 @@ const audioEngine = (() => {
       }
     } catch (e) { console.warn('[Audio] resume error:', e); }
 
+    // Record playback epoch for cycle-boundary calculations
+    _cancelBoundary();
+    try {
+      _playEpoch = getAudioContext().currentTime;
+    } catch (e) { _playEpoch = 0; }
+
+    // Merge any pending data so the first play uses latest values
+    if (_pendingData) {
+      latestData = { ...latestData, ..._pendingData };
+      _pendingData = null;
+    }
+
     // Generate and play the initial pattern (force — first play after track switch)
     _lastTrackPat = null;
     _playPattern();
@@ -154,7 +175,76 @@ const audioEngine = (() => {
     }
   }
 
+  // ── Cycle-boundary scheduling ──────────────────────────────
+  // Tracks declare `cpm` (cycles per minute). We use AudioContext time +
+  // the track's CPM to estimate where we are within the current cycle.
+  // Data changes are deferred to the next downbeat (cycle boundary).
+
+  /** Approximate milliseconds until the next cycle boundary. */
+  function _msUntilNextBoundary() {
+    const cpm = currentTrackDef?.cpm;
+    if (!cpm || cpm <= 0) return 0;  // no CPM → apply immediately
+    try {
+      const ctx = getAudioContext();
+      if (!ctx || ctx.state !== 'running') return 0;
+      const cps = cpm / 60;
+      const elapsed = ctx.currentTime - _playEpoch;
+      const phase = (elapsed * cps) % 1;  // 0-1 position within cycle
+      if (phase < 0.08) return 0;  // already near downbeat
+      return Math.max(0, ((1 - phase) / cps) * 1000);
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  /** Schedule a boundary flush if not already scheduled. */
+  function _scheduleBoundary() {
+    if (_boundaryTimer) return;  // already waiting
+    const ms = _msUntilNextBoundary();
+    if (ms <= 30) {
+      _flushAtBoundary();
+    } else {
+      _boundaryTimer = setTimeout(() => {
+        _boundaryTimer = null;
+        _flushAtBoundary();
+      }, ms);
+    }
+  }
+
+  /** Apply all buffered changes at a cycle boundary. */
+  function _flushAtBoundary() {
+    // Merge pending data
+    if (_pendingData) {
+      latestData = { ...latestData, ..._pendingData };
+      _pendingData = null;
+    }
+
+    // Rebuild pattern (with force if volume changed)
+    if (playing && currentTrackDef) {
+      const force = _forceNextPlay;
+      _forceNextPlay = false;
+      _playPattern(force);
+    }
+
+    // Process buffered events
+    while (_pendingEvents.length > 0) {
+      _processEvent(_pendingEvents.shift());
+    }
+  }
+
+  /** Cancel any pending boundary timer. */
+  function _cancelBoundary() {
+    if (_boundaryTimer) {
+      clearTimeout(_boundaryTimer);
+      _boundaryTimer = null;
+    }
+    _pendingData = null;
+    _pendingEvents = [];
+    _forceNextPlay = false;
+  }
+
   function stop() {
+    _cancelBoundary();
     try { hush(); } catch (e) { console.warn('[Audio] hush error:', e); }
     // Suspend AudioContext to immediately silence reverb/delay tails
     try {
@@ -170,52 +260,53 @@ const audioEngine = (() => {
 
   function setVolume(v) {
     masterVolume = v;
-    // Force replay with new volume
+    // Defer replay to next cycle boundary
     if (playing && currentTrackDef) {
-      _playPattern(true);
+      _forceNextPlay = true;
+      _scheduleBoundary();
     }
   }
 
   function onMarketData(data) {
-    latestData = { ...latestData, ...data };
-    // Only regenerate if we're supposed to be playing
+    // Buffer data — apply at next cycle boundary so we never interrupt mid-bar
+    _pendingData = { ...(_pendingData || {}), ...data };
     if (playing && currentTrackDef) {
-      _playPattern();
+      _scheduleBoundary();
     }
   }
 
   function handleEvent(msg) {
+    if (!playing || !currentTrackDef || !currentTrackDef.onEvent) return;
+    // Queue event for next cycle boundary
+    _pendingEvents.push(msg);
+    _scheduleBoundary();
+  }
+
+  /** Process a single event (called at cycle boundary from _flushAtBoundary). */
+  function _processEvent(msg) {
     if (!playing || !currentTrackDef || !currentTrackDef.onEvent) return;
 
     const eventPat = currentTrackDef.onEvent(msg.event, msg, latestData);
     if (eventPat) {
       try {
         if (currentTrackDef.evaluateCode) {
-          // Evaluate-mode: .play() would replace all $: patterns with just
-          // the event sound.  Instead, re-evaluate the current code with the
-          // event layered in as an extra $: pattern so the base keeps playing.
           const baseCode = currentTrackDef.evaluateCode(latestData);
           if (baseCode) {
-            // Build a strudel code snippet for the one-shot event.
-            // onEvent returns a Pattern object — convert to a code string
-            // that plays once then silences itself via degradeBy after 1 cycle.
             const eventCode = currentTrackDef.onEventCode
               ? currentTrackDef.onEventCode(msg.event, msg, latestData)
               : null;
             if (eventCode) {
               evaluate(baseCode + '\n' + eventCode);
             } else {
-              // Fallback: just re-evaluate base (event has no code form)
               evaluate(baseCode);
             }
             _lastTrackPat = null;  // force fresh evaluate on next data push
           }
         } else if (currentTrackDef.pattern) {
-          // Pattern-mode: layer event on top of base pattern
           const base = currentTrackDef.pattern(latestData);
           if (base) {
             stack(base, eventPat).gain(masterVolume).play();
-            _lastTrackPat = null;  // force base pattern replay on next data push
+            _lastTrackPat = null;
           }
         }
       } catch (e) {
