@@ -57,8 +57,8 @@ const poolsideHouse = (() => {
       const reverbWet = (0.3 + volat * 0.35).toFixed(2);
       const roomSize = (2 + volat * 4).toFixed(1);
 
-      // Momentum-driven register shift: -2 to +2 semitones
-      const regShift = Math.round(mom * 2);
+      // Momentum direction: 1=up, -1=down, 0=sideways
+      const momSign = Math.abs(mom) < 0.15 ? 0 : (mom > 0 ? 1 : -1);
       // Volatility-driven fragmentation
       const degradeAmt = (volat * 0.4).toFixed(2);
 
@@ -79,19 +79,28 @@ const poolsideHouse = (() => {
       // ==============================
       // BLOCK 2: Rhodes / EP chords
       // Active when heat > 0.15 — first harmonic layer to appear
+      // Root motion direction follows momentum: ascending roots on uptrend,
+      // descending on downtrend, standard cycle when sideways
       // ==============================
       if (h > 0.15) {
-        const chordsBullish = "<C^7 Am9 Dm9 G7>";
-        const chordsBearish = "<Am7 Fm9 Dm7 E7>";
-        const changes = tone === 1 ? chordsBullish : chordsBearish;
+        let changes;
+        if (tone === 1) {
+          // Major world
+          if (momSign > 0)      changes = "<C^7 Dm9 Em7 F^7>";      // roots ascend: C→D→E→F
+          else if (momSign < 0) changes = "<C^7 Bb^7 Am9 G7>";      // roots descend: C→Bb→A→G
+          else                  changes = "<C^7 Am9 Dm9 G7>";        // standard cycle
+        } else {
+          // Minor world
+          if (momSign > 0)      changes = "<Am7 Bm7b5 Cm7 Dm7>";    // roots ascend: A→B→C→D
+          else if (momSign < 0) changes = "<Am7 Gm7 Fm9 E7>";       // roots descend: A→G→F→E
+          else                  changes = "<Am7 Fm9 Dm7 E7>";        // standard cycle
+        }
         const epGain = (0.25 * energy * this.getGain('chords')).toFixed(3);
         code += `$: chord("${changes}").dict("ireal").voicing()`;
         code += `.struct("~ [~@2 x] ~ [~@2 x]")`;
         code += `.s("gm_epiano1").gain(${epGain})`;
         code += `.room(${reverbWet}).rsize(${roomSize})`;
         code += `.lpf(${Math.round(filterBase)})`;
-        // Momentum shifts voicing register
-        if (regShift !== 0) code += `.transpose(${regShift})`;
         code += `.pan(0.4).orbit(1);\n`;
       } else {
         code += `$: silence;\n`;
@@ -100,19 +109,34 @@ const poolsideHouse = (() => {
       // ==============================
       // BLOCK 3: Bouncy, funky bassline
       // Active when heat > 0.25
+      // Walking direction follows momentum — bass literally walks up or down
       // ==============================
       if (h > 0.25) {
         const bassGain = (0.3 * energy * this.getGain('bass')).toFixed(3);
         const bassLpf = Math.round(300 + h * 400);
         let bassPattern;
         if (tone === 1) {
-          bassPattern = intBand >= 1
-            ? "<[C2 ~ E2 ~] [A2 ~ C3 A2] [D2 ~ F2 ~] [G2 ~ B2 G2]>"
-            : "<C2 A2 D2 G2>";
+          // Major: C root
+          if (intBand >= 1) {
+            if (momSign > 0)      bassPattern = "<[C2 D2 E2 F2] [A2 B2 C3 D3] [D2 E2 F2 G2] [G2 A2 B2 C3]>";   // walks up
+            else if (momSign < 0) bassPattern = "<[C3 B2 A2 G2] [A2 G2 F2 E2] [D3 C3 B2 A2] [G2 F2 E2 D2]>";   // walks down
+            else                  bassPattern = "<[C2 ~ E2 ~] [A2 ~ C3 A2] [D2 ~ F2 ~] [G2 ~ B2 G2]>";          // bouncy (sideways)
+          } else {
+            if (momSign > 0)      bassPattern = "<C2 D2 E2 F2>";
+            else if (momSign < 0) bassPattern = "<C3 B2 A2 G2>";
+            else                  bassPattern = "<C2 A2 D2 G2>";
+          }
         } else {
-          bassPattern = intBand >= 1
-            ? "<[A1 ~ C2 ~] [F2 ~ A2 F2] [D2 ~ F2 ~] [E2 ~ G#2 E2]>"
-            : "<A1 F2 D2 E2>";
+          // Minor: A root
+          if (intBand >= 1) {
+            if (momSign > 0)      bassPattern = "<[A1 B1 C2 D2] [F2 G2 A2 B2] [D2 E2 F2 G2] [E2 F2 G#2 A2]>"; // walks up
+            else if (momSign < 0) bassPattern = "<[A2 G2 F2 E2] [F2 E2 D2 C2] [D2 C2 B1 A1] [E2 D2 C2 B1]>"; // walks down
+            else                  bassPattern = "<[A1 ~ C2 ~] [F2 ~ A2 F2] [D2 ~ F2 ~] [E2 ~ G#2 E2]>";       // bouncy (sideways)
+          } else {
+            if (momSign > 0)      bassPattern = "<A1 B1 C2 D2>";
+            else if (momSign < 0) bassPattern = "<A2 G2 F2 E2>";
+            else                  bassPattern = "<A1 F2 D2 E2>";
+          }
         }
         code += `$: note("${bassPattern}").s("sawtooth")`;
         code += `.lpf(${bassLpf}).lpq(3).decay(0.3).sustain(0)`;
@@ -166,27 +190,38 @@ const poolsideHouse = (() => {
       }
 
       // ==============================
-      // BLOCK 7: Plucked synth melody — generative, never repetitive
+      // BLOCK 7: Plucked synth melody — directional contour + generative
       // Active when |momentum| > 0.2 or heat > 0.5
+      // Phrase SHAPE follows momentum: ascending lines on uptrend, descending on down
       // ==============================
       const melodyActive = Math.abs(mom) > 0.2 || h > 0.5;
       if (melodyActive) {
         const melodyGain = (0.18 * energy * this.getGain('melody')).toFixed(3);
         const scale = tone === 1 ? "C4:major" : "A4:minor";
 
-        // Base pattern varies with intensity
-        const melodyPattern = intBand >= 2
-          ? "0 [2|3] 4 [~|6] [7|4] ~ [2|6] [0|4]"
-          : "[0|2] ~ [4|6] ~ [7|4] ~ [2|0] ~";
+        let melodyPattern;
+        if (momSign > 0) {
+          // Ascending phrases — notes climb stepwise
+          melodyPattern = intBand >= 2
+            ? "[0 2 4 6] [2 4 6 7] [4 6 7 9] [6 7 9 11]"
+            : "[0 ~ 2 ~] [4 ~ 6 ~] [7 ~ 9 ~] [6 ~ 7 ~]";
+        } else if (momSign < 0) {
+          // Descending phrases — notes fall stepwise
+          melodyPattern = intBand >= 2
+            ? "[11 9 7 6] [9 7 6 4] [7 6 4 2] [6 4 2 0]"
+            : "[7 ~ 6 ~] [6 ~ 4 ~] [4 ~ 2 ~] [2 ~ 0 ~]";
+        } else {
+          // Sideways / low momentum — meandering with random choices
+          melodyPattern = intBand >= 2
+            ? "[0|2] [2|4] [4|6] [~|7] [7|4] [~|6] [2|4] [0|2]"
+            : "[0|2] ~ [4|6] ~ [7|4] ~ [2|0] ~";
+        }
 
         code += `$: note("${melodyPattern}").scale("${scale}")`;
         // Generative transforms: iter rotates start, palindrome doubles length,
-        // degradeBy (driven by volatility) fragments it, every(3,rev) reshuffles
+        // degradeBy (driven by volatility) fragments the line
         code += `.iter(4).palindrome()`;
         code += `.degradeBy(${degradeAmt})`;
-        code += `.every(3, x => x.rev())`;
-        // Momentum shifts register
-        if (regShift !== 0) code += `.scaleTranspose(${regShift})`;
         // Probabilistic octave jumps for sparkle
         code += `.rarely(x => x.add(note(7)))`;
         code += `.s("triangle").decay(0.15).sustain(0)`;
@@ -199,15 +234,18 @@ const poolsideHouse = (() => {
 
       // ==============================
       // BLOCK 8: Secondary melody / counter-motif
-      // Active when heat > 0.6 — adds depth at high activity
+      // Active when heat > 0.6 — follows same directional contour as main melody
       // ==============================
       if (h > 0.6) {
         const counterGain = (0.1 * energy * this.getGain('counter')).toFixed(3);
         const scale = tone === 1 ? "C5:major" : "A5:minor";
-        code += `$: note("[4|5] [6|7] [2|4] [0|2]").scale("${scale}")`;
-        // Offset from main melody by half a beat, with its own iter cycle
+        // Counter-melody mirrors main direction but with different rhythm and offset
+        let counterPattern;
+        if (momSign > 0)      counterPattern = "[2 ~ 4 6] [4 ~ 6 7]";   // ascending, sparser
+        else if (momSign < 0) counterPattern = "[7 ~ 6 4] [6 ~ 4 2]";   // descending
+        else                  counterPattern = "[4|5] [6|7] [2|4] [0|2]"; // meandering
+        code += `$: note("${counterPattern}").scale("${scale}")`;
         code += `.iter(3).degradeBy(${(parseFloat(degradeAmt) + 0.15).toFixed(2)})`;
-        code += `.every(5, x => x.rev())`;
         code += `.s("triangle").decay(0.1).sustain(0)`;
         code += `.gain(${counterGain})`;
         code += `.delay(0.3).delaytime(${(60 / 116 / 3).toFixed(4)}).delayfeedback(0.4)`;
@@ -220,12 +258,20 @@ const poolsideHouse = (() => {
       // ==============================
       // BLOCK 9: Atmospheric pad — last layer to arrive, last to leave
       // Active when heat > 0.1
+      // Chord voicings follow momentum direction (ascending/descending root motion)
       // ==============================
       if (h > 0.1) {
         const padGain = (0.15 * energy * this.getGain('pad')).toFixed(3);
-        const padChanges = tone === 1
-          ? "<[C3,E3,G3,B3] [A3,C4,E4,G4] [D3,F3,A3,C4] [G3,B3,D4,F4]>"
-          : "<[A3,C4,E4,G4] [F3,A3,C4,E4] [D3,F3,A3,C4] [E3,G#3,B3,D4]>";
+        let padChanges;
+        if (tone === 1) {
+          if (momSign > 0)      padChanges = "<[C3,E3,G3,B3] [D3,F3,A3,C4] [E3,G3,B3,D4] [F3,A3,C4,E4]>";  // roots climb
+          else if (momSign < 0) padChanges = "<[C4,E4,G4,B4] [Bb3,D4,F4,A4] [A3,C4,E4,G4] [G3,B3,D4,F4]>"; // roots fall
+          else                  padChanges = "<[C3,E3,G3,B3] [A3,C4,E4,G4] [D3,F3,A3,C4] [G3,B3,D4,F4]>";   // standard cycle
+        } else {
+          if (momSign > 0)      padChanges = "<[A3,C4,E4,G4] [B3,D4,F4,A4] [C4,E4,G4,B4] [D4,F4,A4,C5]>";  // roots climb
+          else if (momSign < 0) padChanges = "<[A3,C4,E4,G4] [G3,B3,D4,F4] [F3,A3,C4,E4] [E3,G#3,B3,D4]>"; // roots fall
+          else                  padChanges = "<[A3,C4,E4,G4] [F3,A3,C4,E4] [D3,F3,A3,C4] [E3,G#3,B3,D4]>";  // standard cycle
+        }
         code += `$: note("${padChanges}").s("triangle")`;
         code += `.attack(0.8).release(2).sustain(0.6)`;
         code += `.gain(${padGain}).lpf(${Math.round(filterBase * 0.7)})`;
