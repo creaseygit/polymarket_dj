@@ -227,7 +227,7 @@ function initBrowse(categories) {
   if (target) browseTab(target);
 }
 
-async function browseTab(btn) {
+async function browseTab(btn, skipCache) {
   document.querySelectorAll('.browse-tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   const tagId = btn.dataset.tag;
@@ -235,7 +235,7 @@ async function browseTab(btn) {
   const cacheKey = tagId + ':' + sort;
   activeTab = cacheKey;
 
-  if (browseCache[cacheKey] && tagId !== 'live') {
+  if (!skipCache && browseCache[cacheKey] && tagId !== 'live') {
     renderBrowse(browseCache[cacheKey]);
     return;
   }
@@ -253,6 +253,18 @@ async function browseTab(btn) {
     document.getElementById('browse-results').innerHTML = '<div class="browse-loading">Failed to load</div>';
   }
 }
+
+function refreshBrowse() {
+  const active = document.querySelector('.browse-tab.active');
+  if (!active) return;
+  browseTab(active, true);
+}
+
+// Auto-refresh browse every 60 seconds
+setInterval(() => {
+  const active = document.querySelector('.browse-tab.active');
+  if (active) browseTab(active, true);
+}, 60000);
 
 function renderBrowse(markets) {
   const el = document.getElementById('browse-results');

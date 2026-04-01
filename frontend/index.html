@@ -67,7 +67,10 @@
 
   <!-- Data Source -->
   <div class="panel">
-    <h2>Data Source</h2>
+    <div class="panel-header">
+      <h2>Data Source</h2>
+      <button class="refresh-btn" id="browse-refresh-btn" onclick="refreshBrowse()" title="Refresh markets">&#x21bb;</button>
+    </div>
     <div class="url-row">
       <input type="text" id="url-input" placeholder="Paste Polymarket URL to play..." onkeydown="if(event.key==='Enter')playUrl()">
       <button onclick="playUrl()">Play URL</button>
