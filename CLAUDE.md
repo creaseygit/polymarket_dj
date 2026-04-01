@@ -78,8 +78,9 @@ For deeper context, read the relevant doc below. **Only load what you need for t
 
 | Doc | Contents | Read when... |
 | --- | -------- | ------------ |
-| [`docs/data-interface.md`](docs/data-interface.md) | Data values pushed to clients (heat, price, momentum, volatility, etc.), sensitivity mechanics (window-scaling vs power-curve), event triggers with magnitudes, signal design reference | Working on data pipeline, scorer, mixer, or understanding what data tracks receive |
-| [`docs/writing-tracks.md`](docs/writing-tracks.md) | **Musician-facing brief**: how to write Strudel tracks, data signal table with musical mapping suggestions, signal combination guide, event handling, sound reference, existing track descriptions | Writing, editing, or reviewing browser tracks. **Give this doc to musicians.** |
+| [`docs/musician-brief.md`](docs/musician-brief.md) | **Give this to musicians.** No-code brief: what each signal means musically, the four market moods, signal combinations, events, sensitivity, diagnostic track guide, quick reference card | Briefing musicians, onboarding collaborators, explaining the data-to-music mapping |
+| [`docs/data-interface.md`](docs/data-interface.md) | Technical data interface: all values pushed to clients, sensitivity mechanics (window-scaling vs power-curve), event triggers with magnitudes, momentum/volatility computation details | Working on data pipeline, scorer, mixer, or understanding signal internals |
+| [`docs/writing-tracks.md`](docs/writing-tracks.md) | How to write Strudel tracks: code examples, pattern interface, data mapping, Strudel sound/effect reference, existing track descriptions | Writing, editing, or reviewing browser tracks (code-level) |
 | [`docs/live-finance.md`](docs/live-finance.md) | Rolling BTC/ETH market patterns (5m/15m/hourly), slug generation, auto-rotation logic | Working on live finance rotation, crypto browse tab, or slug matching |
 | [`docs/web-ui-and-api.md`](docs/web-ui-and-api.md) | UI sections, WebSocket protocol, API endpoints, background loops, deployment | Modifying the web UI, WebSocket protocol, API endpoints, or deployment config |
 | [`docs/gotchas.md`](docs/gotchas.md) | Known issues: Polymarket API, browse/config, legacy code | Hit a weird bug, need to understand non-obvious constraints |
