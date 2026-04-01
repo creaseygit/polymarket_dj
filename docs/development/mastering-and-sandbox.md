@@ -1,6 +1,8 @@
 # Mastering & Sandbox — Design Spec
 
-Two new pages for tuning tracks and exploring their dynamic range.
+> **Status: Implemented.** All phases complete. Both pages are live at `/master` and `/sandbox`. Music tracks (`jazz_trio`, `poolside_house`) are migrated to the voice gain system. This document is the original design spec retained for reference.
+
+Two pages for tuning tracks and exploring their dynamic range.
 
 | Page | URL | Purpose |
 | ---- | --- | ------- |
@@ -382,21 +384,21 @@ A starter template lives at `frontend/tracks/_template.js`. Musicians copy this 
 
 ## 7. Implementation Order
 
-| Phase | Scope | Depends on |
-| ----- | ----- | ---------- |
-| **1** | Track spec update: add `voices`, `gains`, `getGain()` to `audio-engine.js` docs. Create `_template.js`. | Nothing |
-| **2** | Migrate `jazz_trio` and `poolside_house` to new voice spec. | Phase 1 |
-| **3** | Build `/master` page (voice sliders, solo/mute, JSON export/import). | Phase 2 |
-| **4** | Build `/sandbox` page (data simulation, presets, sweeps, event triggers). | Phase 1 |
-| **5** | JSON export polish, cross-page navigation. | Phases 3 & 4 |
+All phases are complete:
 
-Phases 3 and 4 are independent and can be built in parallel.
+| Phase | Scope | Status |
+| ----- | ----- | ------ |
+| **1** | Track spec update: `voices`, `gains`, `getGain()`. `_template.js` created. | Done |
+| **2** | Migrate `jazz_trio` (9 voices) and `poolside_house` (7 voices) to voice spec. | Done |
+| **3** | Build `/master` page (voice sliders, solo/mute, JSON export/import). | Done |
+| **4** | Build `/sandbox` page (data simulation, presets, sweeps, event triggers). | Done |
+| **5** | Cross-page navigation between main, mastering, and sandbox. | Done |
 
 ---
 
-## 8. Open Questions
+## 8. Resolved Design Decisions
 
-- **Should sandbox include voice sliders?** Spec says yes — it's useful to tune levels while exploring data ranges. If this feels cluttered, the voice section could be a collapsible panel.
-- **Preset values** — the preset table above is a starting point. Should be tuned by ear once the sandbox is running.
-- **URL state** — should mastering/sandbox pages store their state in the URL hash (like the main page does for market selection)? Useful for sharing links.
-- **Mobile layout** — both pages are slider-heavy. Needs consideration for touch targets on mobile, but not a blocker for v1.
+- **Sandbox includes voice sliders** — yes, the sandbox has full voice gain controls (same as mastering page).
+- **Preset values** — implemented as specified in the preset table above. Can be tuned by ear.
+- **URL state** — not yet implemented for mastering/sandbox pages (future enhancement).
+- **Mobile layout** — not yet optimized for touch (future enhancement).

@@ -125,6 +125,14 @@ Piano chord alert. Silent when nothing is moving. When `price_move` fires, plays
 ### Late Night in Bb (jazz trio)
 Full jazz piano trio with two harmonic worlds: bullish (Bb major, ii-V-I-IV) and bearish (G minor, iiø-V-i-iv). `tone` switches between them. `trade_rate` + `velocity` drive the intensity band — low is sparse quarter-note walks, mid adds ghost snares and eighth-note approaches, high adds chromatic runs and kick bombs. `heat` scales overall volume. Momentum keeps the melody alive during sustained trends — it doesn't need an edge-detected move to play. Volatility makes the piano slightly detuned, increases delay feedback, and darkens the bass (lower LPF) — uncertainty makes the whole trio sound muddier and more unsettled.
 
+### Poolside House
+Relaxed daytime house (~116 BPM). Layers activate progressively with heat: pad first, then chords, bass, kick+percussion, melody, counter-melody. At rest, the track is completely silent. Bullish = C major Rhodes chords, bearish = A minor. Momentum shifts the melody register up or down and drives melody activation. Volatility fragments the patterns and deepens reverb. Price controls the global filter — higher price = brighter sound.
+
+## Tools for Tuning
+
+- **Mastering page** (`/master`) — adjust the volume of each voice (bass, melody, drums, etc.) independently with per-voice gain sliders. Solo or mute individual voices. Export your levels as JSON.
+- **Sandbox page** (`/sandbox`) — no live market needed. Use sliders to simulate any market condition (try the presets: Bull Run, Crash, Dead Market, Chaos, Breakout, Calm Trend). Sweep signals from 0→1 to hear the full dynamic range. Fire test events (spikes, price moves, resolutions).
+
 ## Quick Reference Card
 
 ```

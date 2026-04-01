@@ -46,10 +46,33 @@ The server maintains shared Polymarket WebSocket subscriptions via reference cou
 | Method | Path             | Purpose                                                             |
 | ------ | ---------------- | ------------------------------------------------------------------- |
 | GET    | `/`              | Serve main page (`frontend/index.html`)                             |
+| GET    | `/master`        | Mastering page (`frontend/master.html`) — per-voice gain mixing     |
+| GET    | `/sandbox`       | Sandbox page (`frontend/sandbox.html`) — simulated data exploration |
 | GET    | `/ws`            | WebSocket endpoint                                                   |
 | GET    | `/api/browse`    | Browse markets by category. Params: `tag_id`, `sort`, `limit`       |
 | GET    | `/api/categories`| Returns list of browse tab definitions from `BROWSE_CATEGORIES`     |
 | GET    | `/static/*`      | Static files from `frontend/` directory                              |
+
+## Mastering Page (`/master`)
+
+Per-voice gain mixing against live market data. Connects to the server via WebSocket (same as main page) for market data and track discovery.
+
+- **Track selector** — same as main page, populates from server's track list
+- **Per-voice gain sliders** — range 0.00–2.00 (0=muted, 1=original, 2=boosted). Reads `track.voices` to render sliders, writes to `track.gains`. Changes take effect at next cycle boundary
+- **Solo (S) / Mute (M)** — UI-only state (not exported). Solo = only soloed voices play. Mute = silence that voice. Implemented by overriding `track.getGain()` to return 0 for muted/un-soloed voices
+- **Master volume** — same Web Audio GainNode as main page
+- **Export JSON** — downloads `{format: "dam.fm/mastering", version: 1, track, timestamp, voices: {id: gain}}` 
+- **Import JSON** — loads gains from file, applies to matching voice IDs, warns on track name mismatch
+
+## Sandbox Page (`/sandbox`)
+
+Simulated market data exploration — no live market connection needed. Makes a brief WebSocket connection on load solely to fetch the track list, then disconnects.
+
+- **Data signal sliders** — all 9 signals (heat, price, price_move, momentum, velocity, trade_rate, spread, volatility, sensitivity) plus tone toggle. Changes push synthetic data directly to `audioEngine.onMarketData()`
+- **Presets** — 6 named presets that set all sliders at once: Bull Run, Crash, Dead Market, Chaos, Breakout, Calm Trend
+- **Sweeps** — animate a single signal (or all) from 0→1 over a configurable duration via `requestAnimationFrame`
+- **Event triggers** — fire synthetic events (spike, price_move +/-, resolved yes/no) with adjustable magnitude
+- **Voice gain sliders** — same per-voice gain/solo/mute as mastering page, plus JSON export/import
 
 ## Browse Tabs
 

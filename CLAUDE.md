@@ -49,7 +49,7 @@ CloudFlare → Nginx → Python aiohttp (data only) ←→ Polymarket APIs
 
 | File                      | Purpose                                                                                                              |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `server.py`               | **Main entry point**. aiohttp web server, WebSocket handler (`/ws`), per-client broadcast loop, browse API           |
+| `server.py`               | **Main entry point**. aiohttp web server, WebSocket handler (`/ws`), per-client broadcast loop, browse API, `/master` and `/sandbox` page routes |
 | `sessions.py`             | `ClientSession` (per-client state) + `SessionManager` (shared Polymarket WS subscriptions via ref counting)          |
 | `config.py`               | Tunable constants (API URLs, scoring weights, WS config, sensitivity defaults, event thresholds, `BROWSE_CATEGORIES`)|
 | `polymarket/gamma.py`     | Gamma REST API client: `fetch_active_markets`, `fetch_browse_markets`, `fetch_market_by_slug`, etc.                  |
@@ -59,8 +59,10 @@ CloudFlare → Nginx → Python aiohttp (data only) ←→ Polymarket APIs
 | `frontend/index.html`     | Main page HTML, loads custom Strudel bundle                                                                           |
 | `frontend/app.js`         | UI logic: browse tabs, market picker, sliders, now-playing display, dynamic track loader                              |
 | `frontend/ws-client.js`   | WebSocket client with auto-reconnect                                                                                  |
-| `frontend/audio-engine.js`| Strudel init, track registry, pattern lifecycle (two modes: `evaluate` for raw strudel code, `pattern` for Pattern objects), music theory utils |
-| `frontend/tracks/*.js`    | Track files (auto-discovered, dynamically loaded): `oracle.js` (piano chords tracing price curve), `jazz_trio.js` (Late Night in Bb — jazz piano trio with bullish/bearish paradigms via evaluate), `diagnostic.js` (one sound per signal for audible data verification), `_template.js` (annotated starter template for new tracks with voice/mastering support). Drop a new `.js` file here and restart the server — no other changes needed |
+| `frontend/audio-engine.js`| Strudel init, track registry, pattern lifecycle (two modes: `evaluate` for raw strudel code, `pattern` for Pattern objects), music theory utils, track state getters (`getTrackRegistry()`, `getCurrentTrack()`, `getLatestData()`, `isPlaying()`) |
+| `frontend/tracks/*.js`    | Track files (auto-discovered, dynamically loaded): `jazz_trio.js` (Late Night in Bb — 9-voice jazz trio with voice gain system), `poolside_house.js` (Poolside House — 7-voice relaxed house), `oracle.js` (piano chords tracing price curve), `diagnostic.js` (one sound per signal for audible data verification), `_template.js` (annotated starter template for new tracks with voice/mastering support). Drop a new `.js` file here and restart the server — no other changes needed |
+| `frontend/master.html`    | Mastering page (`/master`): per-voice gain sliders, solo/mute, JSON export/import, connected to live market data via WebSocket |
+| `frontend/sandbox.html`   | Sandbox page (`/sandbox`): simulated market data sliders, presets, sweeps, event triggers, voice gain mixing — no live market needed |
 | `frontend/build/`         | npm build for custom Strudel bundle (`@strudel/web` + `@strudel/soundfonts`). Run `cd frontend/build && npm run build` to regenerate `frontend/strudel-bundle.js` |
 | `deploy/`                 | Nginx config, systemd service, EC2 setup script                                                                       |
 
@@ -85,4 +87,4 @@ For deeper context, read the relevant doc below. **Only load what you need for t
 | [`docs/web-ui-and-api.md`](docs/web-ui-and-api.md) | UI sections, WebSocket protocol, API endpoints, background loops, deployment | Modifying the web UI, WebSocket protocol, API endpoints, or deployment config |
 | [`docs/gotchas.md`](docs/gotchas.md) | Known issues: Polymarket API, browse/config, legacy code | Hit a weird bug, need to understand non-obvious constraints |
 | [`docs/deployment.md`](docs/deployment.md) | Lightsail/Nginx/CloudFlare setup, deploy commands, systemd service, first-time provisioning | Deploying changes, server ops, infrastructure questions |
-| [`docs/development/mastering-and-sandbox.md`](docs/development/mastering-and-sandbox.md) | Mastering page (per-voice gain mixing), sandbox page (data simulation), voice gain system spec, track template, JSON export format | Building mastering/sandbox pages, migrating tracks to voice spec, writing new tracks |
+| [`docs/development/mastering-and-sandbox.md`](docs/development/mastering-and-sandbox.md) | **Implemented.** Design spec for mastering page (per-voice gain mixing), sandbox page (data simulation), voice gain system, JSON export format. Both pages live at `/master` and `/sandbox`. All music tracks (`jazz_trio`, `poolside_house`) are migrated to the voice gain system | Modifying mastering/sandbox pages, adding voices to new tracks, understanding the gain multiplier flow |
