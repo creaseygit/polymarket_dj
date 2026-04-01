@@ -25,7 +25,7 @@ The server maintains shared Polymarket WebSocket subscriptions via reference cou
 
 | type | payload | when |
 |------|---------|------|
-| `status` | `{tracks: [...], categories: [...], samples: [...]}` | On connect |
+| `status` | `{tracks: [...], categories: [...]}` | On connect |
 | `market_data` | `{heat, price, price_delta, velocity, trade_rate, spread, tone, sensitivity}` | Every 3s |
 | `event` | `{event: "spike"\|"price_move"\|"resolved", direction?, result?}` | On threshold |
 | `market_info` | `{question, slug, event_slug, outcomes, link}` | On market change |
@@ -71,7 +71,7 @@ Each tab fetches 10 markets from the Gamma API filtered by `tag_id` (defined in 
   - Rate limiting on `/api/` — 5 req/s per IP, burst 10 (`limit_req_zone`)
   - Security headers: `X-Content-Type-Options`, `X-Frame-Options`, `Content-Security-Policy`
 - **CloudFlare** for DNS, CDN (caches static assets), HTTPS (Full strict), WebSocket support
-- **systemd** service runs as dedicated `polymarket-dj` user (not `www-data`)
+- **systemd** service runs as dedicated `polymarket-dj` user
 - Server sends WebSocket ping every 30s (CloudFlare has 100s idle timeout)
 - Config files in `deploy/`: `nginx.conf`, `polymarket-dj.service`, `setup.sh`
 

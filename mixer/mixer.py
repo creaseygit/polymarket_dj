@@ -39,10 +39,6 @@ class AutonomousDJ:
             self._switch_market(aid, market)
         print(f"[DJ] Playing: {slug}", flush=True)
 
-    def unpin(self):
-        """Clear pinned market. Keeps current market playing."""
-        self.pinned_slug = None
-
     # ── Main loop ─────────────────────────────────────────
 
     async def run(self):
@@ -130,19 +126,6 @@ class AutonomousDJ:
                 if not existing:
                     self.scorer.on_price_change(aid, price)
                     print(f"[DJ] Seeded price {aid[:8]}... = {price:.4f}", flush=True)
-
-    def _enter_ambient_mode(self):
-        print("[DJ] Ambient mode -- no hot markets", flush=True)
-        self.current_market = None
-        self.current_asset = None
-        if self.on_event:
-            asyncio.ensure_future(self.on_event("ambient_mode", {"value": 1}))
-
-    def _find_market(self, asset_id: str) -> dict | None:
-        for m in self.all_markets:
-            if asset_id in m["asset_ids"]:
-                return m
-        return None
 
     def _log_now_playing(self):
         if not self.current_market:

@@ -6,11 +6,6 @@ CLOB_WS        = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
 RESCORE_INTERVAL   = 30
 MARKET_FETCH_LIMIT = 50          # pull top N active markets to score from
 
-# ── Mixer ────────────────────────────────────────────────
-MAX_ACTIVE_LAYERS  = 5           # simultaneous market→instrument mappings
-MIN_ACTIVE_LAYERS  = 2           # floor — always keep something playing
-FADE_BARS          = 8           # crossfade duration in musical bars
-
 # ── Scoring weights ──────────────────────────────────────
 WEIGHT_PRICE_VELOCITY = 0.35
 WEIGHT_TRADE_RATE     = 0.40
@@ -33,14 +28,6 @@ PRICE_MOVE_MAX         = 0.03      # 3¢ move in window = magnitude 1.0
 WS_PING_INTERVAL = 30           # seconds, keep-alive for CloudFlare's 100s idle timeout
 MAX_CLIENTS      = 200          # safety limit on concurrent WebSocket connections
 DATA_PUSH_INTERVAL = 3.0        # seconds between market data pushes to clients
-
-# ── Ambient fallback ─────────────────────────────────────
-# Triggered when no markets exceed MIN_TRADE_RATE
-AMBIENT_MODE_THRESHOLD = 1       # active markets below this → go ambient
-
-# ── Request mode (Phase 2) ───────────────────────────────
-# Allow a specific market to be pinned as the lead layer
-PINNED_MARKET_SLUG = None        # e.g. "will-trump-veto-the-bill"
 
 # ── Browse categories ──────────────────────────────────
 # Polymarket tag_ids for the Browse tabs in the web UI

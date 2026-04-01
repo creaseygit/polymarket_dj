@@ -22,7 +22,7 @@ Connection details (IP, SSH key path, CloudFlare credentials) are in `.env` (git
     └── setup.sh             # one-time provisioning script
 ```
 
-The app runs as a systemd service under the `ubuntu` user.
+The app runs as a systemd service under the `polymarket-dj` user.
 
 ## Deploying Changes
 
