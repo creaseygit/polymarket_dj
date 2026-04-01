@@ -60,7 +60,7 @@ CloudFlare → Nginx → Python aiohttp (data only) ←→ Polymarket APIs
 | `frontend/app.js`         | UI logic: browse tabs, market picker, sliders, now-playing display, dynamic track loader                              |
 | `frontend/ws-client.js`   | WebSocket client with auto-reconnect                                                                                  |
 | `frontend/audio-engine.js`| Strudel init, track registry, pattern lifecycle (two modes: `evaluate` for raw strudel code, `pattern` for Pattern objects), music theory utils |
-| `frontend/tracks/*.js`    | Track files (auto-discovered, dynamically loaded): `oracle.js` (piano chords tracing price curve), `jazz_trio.js` (Late Night in Bb — jazz piano trio with bullish/bearish paradigms via evaluate), `diagnostic.js` (one sound per signal for audible data verification). Drop a new `.js` file here and restart the server — no other changes needed |
+| `frontend/tracks/*.js`    | Track files (auto-discovered, dynamically loaded): `oracle.js` (piano chords tracing price curve), `jazz_trio.js` (Late Night in Bb — jazz piano trio with bullish/bearish paradigms via evaluate), `diagnostic.js` (one sound per signal for audible data verification), `_template.js` (annotated starter template for new tracks with voice/mastering support). Drop a new `.js` file here and restart the server — no other changes needed |
 | `frontend/build/`         | npm build for custom Strudel bundle (`@strudel/web` + `@strudel/soundfonts`). Run `cd frontend/build && npm run build` to regenerate `frontend/strudel-bundle.js` |
 | `deploy/`                 | Nginx config, systemd service, EC2 setup script                                                                       |
 
@@ -85,3 +85,4 @@ For deeper context, read the relevant doc below. **Only load what you need for t
 | [`docs/web-ui-and-api.md`](docs/web-ui-and-api.md) | UI sections, WebSocket protocol, API endpoints, background loops, deployment | Modifying the web UI, WebSocket protocol, API endpoints, or deployment config |
 | [`docs/gotchas.md`](docs/gotchas.md) | Known issues: Polymarket API, browse/config, legacy code | Hit a weird bug, need to understand non-obvious constraints |
 | [`docs/deployment.md`](docs/deployment.md) | Lightsail/Nginx/CloudFlare setup, deploy commands, systemd service, first-time provisioning | Deploying changes, server ops, infrastructure questions |
+| [`docs/development/mastering-and-sandbox.md`](docs/development/mastering-and-sandbox.md) | Mastering page (per-voice gain mixing), sandbox page (data simulation), voice gain system spec, track template, JSON export format | Building mastering/sandbox pages, migrating tracks to voice spec, writing new tracks |

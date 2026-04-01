@@ -184,9 +184,34 @@ Add metadata as comments at the top of the file for the server to parse:
 ## Adding a New Track
 
 Tracks are **auto-discovered and dynamically loaded** — no `index.html` changes needed:
-1. Create `frontend/tracks/yourname.js` with the metadata comment and `registerTrack()` call
-2. Restart the server (it scans `frontend/tracks/` on startup)
-3. The browser loads track scripts dynamically based on the server's discovered list
+1. Copy `frontend/tracks/_template.js` to `frontend/tracks/yourname.js`
+2. Rename the track, fill in voices and patterns (the template is fully annotated)
+3. Restart the server (it scans `frontend/tracks/` on startup)
+4. The browser loads track scripts dynamically based on the server's discovered list
+
+## Voice Gain System (Mastering Support)
+
+All music tracks must declare a `voices` object for per-voice gain control from the mastering page. See `frontend/tracks/_template.js` for the full annotated pattern, or [`docs/development/mastering-and-sandbox.md`](development/mastering-and-sandbox.md) for the design spec.
+
+```javascript
+voices: {
+  kick:   { label: "Kick",   default: 1.0 },
+  bass:   { label: "Bass",   default: 1.0 },
+  chords: { label: "Chords", default: 1.0 },
+  melody: { label: "Melody", default: 1.0 },
+},
+gains: {},
+getGain(voice) {
+  return this.gains[voice] ?? this.voices[voice]?.default ?? 1.0;
+},
+```
+
+In each voice code generator, multiply `.gain()` values by `this.getGain('voiceName')`:
+```javascript
+const g = (0.35 * energy * this.getGain('kick')).toFixed(3);
+```
+
+Use consistent voice IDs across tracks: `kick`, `snare`, `hihat`, `perc`, `bass`, `chords`, `melody`, `pad`, `fx`.
 
 ## Music Utilities
 
