@@ -9,6 +9,7 @@ const audioEngine = (() => {
   let currentTrackDef = null;
   let currentTrackName = null;
   let masterVolume = 0.7;
+  let _masterGainNode = null;  // Web Audio GainNode on master output
   let latestData = {};
   let _lastTrackPat = null;  // track pattern identity — skip .play() when unchanged
 
@@ -46,6 +47,22 @@ const audioEngine = (() => {
         await aliasBank(`${CDN}/tidal-drum-machines-alias.json`);
       },
     });
+
+    // Insert a master GainNode between Strudel's output and the speakers.
+    // Override ctx.destination so all Strudel patterns (both evaluate and
+    // pattern mode) route through our gain — this is the volume slider control.
+    try {
+      const ctx = getAudioContext();
+      _masterGainNode = ctx.createGain();
+      _masterGainNode.gain.value = masterVolume;
+      _masterGainNode.connect(ctx.destination);
+      Object.defineProperty(ctx, 'destination', {
+        get: () => _masterGainNode,
+        configurable: true,
+      });
+    } catch (e) {
+      console.warn('[Audio] Master gain setup failed (non-fatal):', e);
+    }
 
     // Warm up sample buffers — Dirt-Samples index loads during prebake but
     // the actual .wav files are fetched lazily on first trigger.  Play a
@@ -160,7 +177,7 @@ const audioEngine = (() => {
       const pat = currentTrackDef.pattern(latestData);
       if (pat) {
         if (force || pat !== _lastTrackPat) {
-          pat.gain(masterVolume).play();
+          pat.play();
           _lastTrackPat = pat;
         }
       } else {
@@ -260,10 +277,9 @@ const audioEngine = (() => {
 
   function setVolume(v) {
     masterVolume = v;
-    // Defer replay to next cycle boundary
-    if (playing && currentTrackDef) {
-      _forceNextPlay = true;
-      _scheduleBoundary();
+    // Update the master gain node directly — no pattern rebuild needed
+    if (_masterGainNode) {
+      _masterGainNode.gain.value = v;
     }
   }
 
@@ -306,7 +322,7 @@ const audioEngine = (() => {
         // result is a Pattern — stack with base pattern
         const base = currentTrackDef.pattern(latestData);
         if (base) {
-          stack(base, result).gain(masterVolume).play();
+          stack(base, result).play();
           _lastTrackPat = null;
         }
       }
