@@ -27,7 +27,14 @@ const myTrack = {
     `;
   },
 
-  onEvent() { return null; },
+  onEvent(type, msg, data) {
+    // Return a code string for evaluate-mode tracks, or null
+    if (type === "spike") {
+      const gain = (0.04 + (msg.magnitude || 0.5) * 0.04).toFixed(3);
+      return `$: s("<cr:0 ~ ~ ~>").gain(${gain}).room(0.4).orbit(5);`;
+    }
+    return null;
+  },
 };
 
 audioEngine.registerTrack("my_track", myTrack);
@@ -83,31 +90,89 @@ audioEngine.registerTrack("my_track", myTrack);
 
 ## Data Received
 
-The `pattern(data)` method receives:
+The `pattern(data)` or `evaluateCode(data)` method receives these values every 3 seconds:
+
 ```javascript
 {
-  heat: 0.0-1.0,        // Composite market activity (sensitivity-adjusted)
-  price: 0.0-1.0,       // Current market price
-  price_delta: -1.0-1.0, // Signed per-cycle (3s) price change (sensitivity-adjusted)
-  price_move: -1.0-1.0,  // Edge-detected price change (30s window, only non-zero during active movement)
-  velocity: 0.0-1.0,     // Price velocity (sensitivity-adjusted)
-  trade_rate: 0.0-1.0,   // Trades per minute (sensitivity-adjusted)
-  spread: 0.0-1.0,       // Bid-ask spread (sensitivity-adjusted)
-  tone: 0|1,             // 1=bullish/major, 0=bearish/minor
-  sensitivity: 0.0-1.0   // Raw sensitivity value (optional use)
+  // ── What's happening ──
+  heat: 0.0-1.0,         // Overall market activity (energy)
+  trade_rate: 0.0-1.0,   // How frequently people are trading
+  spread: 0.0-1.0,       // Order book tightness
+
+  // ── Price & direction ──
+  price: 0.0-1.0,        // Current market price (0=No, 1=Yes)
+  price_move: -1.0-1.0,  // "Is price moving RIGHT NOW?" — only non-zero during active moves (30s window)
+  momentum: -1.0-1.0,    // "What's the trend?" — positive=uptrend, negative=downtrend (sensitivity-scaled window)
+  velocity: 0.0-1.0,     // Speed of price change (unsigned)
+
+  // ── Character ──
+  volatility: 0.0-1.0,   // Market uncertainty — high=erratic bouncing, low=calm
+  tone: 0|1,             // 1=bullish/major, 0=bearish/minor (with hysteresis, won't flicker)
+  sensitivity: 0.0-1.0,  // User's sensitivity slider value (optional use)
 }
 ```
 
-Activity metrics are **pre-adjusted by the user's sensitivity setting**.
+### How to think about these signals musically
+
+| Signal | Musical role | Example mapping |
+| --- | --- | --- |
+| `heat` | **Energy** — how loud/busy should things be? | Volume scaling, layer count, rhythmic density |
+| `price` | **Harmonic position** — where are we? | Register, note choice, tension/resolution (0.5=uncertain, 0.9+=resolved) |
+| `price_move` | **Phrase trigger** — something is happening NOW | Ascending/descending melodic runs, arpeggios, fills |
+| `momentum` | **Section mood** — sustained direction | Build energy during uptrend, pull back during downtrend, sparse when sideways |
+| `velocity` | **Pace** — how fast is the market moving? | Tempo feel, rhythmic subdivision |
+| `volatility` | **Tension/uncertainty** — erratic vs calm | Dissonance, detuning, filter modulation, tremolo, irregular rhythms |
+| `trade_rate` | **Complexity** — how much activity? | Drum pattern complexity, number of instruments, melodic density |
+| `spread` | **Liquidity feel** — tight book vs wide gap | Consonance/dissonance, register width |
+| `tone` | **Key/mode** — major or minor? | Scale selection, chord quality |
+
+### Signal combinations worth listening for
+
+- **High volatility + low |momentum|** = *indecision* — market is bouncing with no direction. Map to: tension, dissonance, unsettled rhythms.
+- **High volatility + high |momentum|** = *breakout* — volatile but going somewhere. Map to: dramatic energy + directional phrases.
+- **Low volatility + high |momentum|** = *steady trend* — calm, confident move. Map to: smooth ascending/descending lines.
+- **Low volatility + low |momentum|** = *quiet* — nothing happening. Map to: ambient, sparse, waiting.
+
+### Sensitivity
+
+The user's **sensitivity slider** controls how reactive the music is. You don't need to handle this — it's pre-applied before your track receives data:
+
+- **Activity signals** (`heat`, `velocity`, `trade_rate`, `spread`, `price_move`): amplitude is scaled — high sensitivity inflates small values, low sensitivity crushes them.
+- **Trend signals** (`momentum`, `volatility`): the analysis **window length** changes — high sensitivity = short window (reactive, catches quick moves), low sensitivity = long window (smooth, only sustained trends). This is like switching between short and long moving averages on a trading chart.
 
 ## Events
 
-The `onEvent(type, msg, data)` method handles one-shot events:
-- `type === 'spike'` — Heat delta exceeded threshold
-- `type === 'price_move'` — `msg.direction` is `1` (up) or `-1` (down)
-- `type === 'resolved'` — `msg.result` is `1` (Yes won) or `-1` (No won)
+The `onEvent(type, msg, data)` method handles one-shot events. Return type depends on track mode:
+- **Evaluate-mode tracks**: return a code string (appended to base `evaluateCode()` output), or `null`
+- **Pattern-mode tracks**: return a Pattern object (stacked with base `pattern()` output), or `null`
 
-Return a Strudel Pattern to layer on top of the current pattern, or `null` for no response.
+| Event | `msg` fields | Meaning |
+| --- | --- | --- |
+| `spike` | `magnitude: 0.0–1.0` | Heat spike — magnitude tells you how big (small threshold breach vs huge jump) |
+| `price_move` | `direction: 1\|-1`, `magnitude: 0.0–1.0` | Significant price change — direction + size |
+| `resolved` | `result: 1\|-1` | Market resolved (1=Yes won, -1=No won) |
+
+Use `msg.magnitude` to scale your response — a tiny spike and a massive spike can sound different:
+
+```javascript
+// Evaluate-mode example:
+onEvent(type, msg, data) {
+  if (type === "spike") {
+    const gain = (0.04 + (msg.magnitude || 0.5) * 0.04).toFixed(3);
+    return `$: s("<cr:0 ~ ~ ~>").gain(${gain}).room(0.4).orbit(4);`;
+  }
+  return null;
+}
+
+// Pattern-mode example:
+onEvent(type, msg, data) {
+  if (type === "spike") {
+    const gain = 0.04 + (msg.magnitude || 0.5) * 0.04;
+    return sound("cr:0").gain(gain).room(0.4);
+  }
+  return null;
+}
+```
 
 ## Track Metadata
 
@@ -128,9 +193,8 @@ Tracks are **auto-discovered and dynamically loaded** — no `index.html` change
 `audio-engine.js` provides helpers (independent of Strudel):
 - `getScaleNotes(root, scaleType, count, octaves)` — Get scale notes
 - `midiToNote(midi)` / `noteToMidi(note)` — Convert between MIDI numbers and note names (`C#4`, `Bb3`)
-- `midiToHz(midi)` — Convert MIDI note to Hz. **Use this for all filter cutoff values** (MIDI note numbers, not Hz)
 - `noteToStrudel(noteName)` — Convert standard notation to Strudel format (`C#4` → `cs4`, `Bb3` → `bb3`)
-- `SCALES` — `{major, minor, major_pentatonic, minor_pentatonic, major7, minor7, m7minus5}` interval arrays
+- `SCALES` — `{major, minor}` interval arrays
 
 ## Sounds
 
@@ -192,7 +256,7 @@ sound("cr:0").speed(0.95).gain(0.06).end(0.3)               // crash cymbal (Dir
 
 | Effect | Usage | Notes |
 | --- | --- | --- |
-| Low-pass filter | `.lpf(hz)` | Use `midiToHz()` if converting from MIDI note numbers |
+| Low-pass filter | `.lpf(hz)` | Frequency in Hz |
 | High-pass filter | `.hpf(hz)` | |
 | Reverb | `.room(amount)`, `.rsize(size)` | `room` = wet mix, `rsize` = decay time |
 | Delay/echo | `.delay(wet)`, `.delaytime(s)`, `.delayfeedback(fb)` | |
@@ -249,17 +313,27 @@ note("c3 ~ e3 ~ g3").sound("sine")  // ~ = silence
 ## Existing Tracks
 
 ### oracle.js
-Piano chord alert that fires on price moves. Uses `price_move` (edge-detected, only non-zero during active movement): magnitude sets chord count (2-5), sign sets direction (ascending=up, descending=down). Silent when price is flat. C major when bullish (tone=1), A minor when bearish (tone=0). Uses pre-defined triad chord runs via polyphonic mini-notation `[deg,deg+2,deg+4]`.
-
-### jazz_alerts.js
-Jazz trio with reactive piano. 100 BPM (cpm 25). All acoustic samples: ride cymbal (`cr` samples, 2-layer spang-a-lang), walking upright bass (`gm_acoustic_bass` GM soundfont), Salamander grand piano voicings. Ride uses quarter-note pulse on all 4 beats plus triplet skip notes on beats 2 and 4 (12-element grid). Hi-hat foot chicks on 2 and 4. Feathered kick barely audible. Snare ghost notes on triplet partials (65% `degradeBy`). Bass walks chord tones with chromatic approaches — Cmaj7→Am7→Dm7→G7 (major) or Am7→Dm7→Em7→Am7 (minor). Piano 7th-chord voicings trigger on `price_move`. Energy-gated: cross-stick, ride bell (`cr:3` high speed), snare bombs, hi-hat splashes. Consistent room reverb across all layers for cohesive acoustic space.
-
-### mezzanine.js
-Massive Attack trip-hop, 80 BPM. Am → Am → Fm → Gm progression (4-bar cycle). Half-time beat: kick on 1 and "and" of 2 (`bd:3`), snare on 3 only (`sd:1`), 8th-note hi-hats with `degradeBy` for human feel. Deep saw bass with root-fifth phrases, sub bass (sine) on roots. Pad triads (triangle + reverb), vinyl hiss. Activity-gated: open hat, ghost kicks, dub echo stab (delay/feedback), cowbell rim clicks. Tone switches between natural minor (bullish) and darker voicings (bearish). Events trigger piano arpeggios and cymbal crashes.
+Piano chord alert that fires on price moves. Uses `price_move` (edge-detected, only non-zero during active movement): magnitude sets chord count (2-5), sign sets direction (ascending=up, descending=down). Silent when price is flat. C major when bullish (tone=1), A minor when bearish (tone=0). Uses pre-defined triad chord runs via polyphonic mini-notation `[deg,deg+2,deg+4]`. **Momentum** shifts chord register up/down (uptrend = higher voicings, downtrend = lower, ±3 semitones). **Volatility** controls reverb depth (uncertainty = more spacey, ethereal). Responds to `spike` events with crash cymbal scaled by magnitude.
 
 ### jazz_trio.js
-Jazz piano trio with two market paradigms, 120 BPM. **Uses evaluate mode** — strudel code built dynamically with data-driven interpolation. **Two paradigms driven by `tone`:** Bullish (tone=1) plays Bb major changes (Cm7→F7→BbΔ7→EbΔ7, ii-V-I-IV) with ascending bass walks and ascending melodies. Bearish (tone=0) plays G minor changes (Am7b5→D7→Gm7→Cm7, iiø-V-i-iv) with descending bass walks and descending melodies. **Intensity axis:** `trade_rate` (60%) + `velocity` (40%) compute an intensity score quantized into 3 bands (low/mid/high). Each band selects from pre-composed bass (16 bars x 6 variants), melody (8 bars x 6 variants), and percussion patterns of increasing complexity. Low: quarter-note walks, sparse comping, simple hi-hat. Mid: eighth-note approaches, ghost snares, cross-stick. High: chromatic runs, kick bombs, turnaround fills, dense comping. Heat still controls overall energy/gain scaling. Melody responds to `price_move`: plays only during active movement, velocity scales with magnitude. Piano comping uses `chord().dict("ireal").voicing()` with 3 density levels. All layers use `.orbit()` for bus isolation. Spike events trigger crash cymbal. Caches output keyed on tone + intensity band + quantized heat + price direction + magnitude.
+Jazz piano trio with two market paradigms, 120 BPM. **Uses evaluate mode** — strudel code built dynamically with data-driven interpolation. **Two paradigms driven by `tone`:** Bullish (tone=1) plays Bb major changes (Cm7→F7→BbΔ7→EbΔ7, ii-V-I-IV) with ascending bass walks and ascending melodies. Bearish (tone=0) plays G minor changes (Am7b5→D7→Gm7→Cm7, iiø-V-i-iv) with descending bass walks and descending melodies. **Intensity axis:** `trade_rate` (60%) + `velocity` (40%) compute an intensity score quantized into 3 bands (low/mid/high). Each band selects from pre-composed bass (16 bars x 6 variants), melody (8 bars x 6 variants), and percussion patterns of increasing complexity. Low: quarter-note walks, sparse comping, simple hi-hat. Mid: eighth-note approaches, ghost snares, cross-stick. High: chromatic runs, kick bombs, turnaround fills, dense comping. Heat still controls overall energy/gain scaling. **Momentum** sustains melody during trends — melody plays when `price_move` is active OR `|momentum| > 0.1`, so sustained trends keep the melody alive even after the edge-detected move decays. **Volatility** drives timbral uncertainty: piano comping gets slight detuning (`.speed(rand.range(...))`), delay feedback increases (more wash/echo), and bass LPF drops (darker, muddier tone). All layers use `.orbit()` for bus isolation. Spike events trigger crash cymbal scaled by event magnitude.
+
+### diagnostic.js
+System test track for audible data verification. **Not musical — diagnostic.** One dedicated sound per signal, spatially separated via pan and orbit so they don't mask each other. Toggle individual layers on/off via the `LAYERS` config object at the top of the file. Close your eyes and identify each signal by ear:
+
+| Signal | Sound | Pan | What to listen for |
+| --- | --- | --- | --- |
+| `heat` | Kick drum pulse | Center | Rate: 1 hit/cycle at 0 → 8 hits at 1 |
+| `price` | Sine drone | Center | Pitch: C3 at price=0 → C5 at price=1 |
+| `momentum` | Sawtooth + filter sweep | Left | Pitch rises with +ve momentum, drops with -ve. Filter sweeps up/down to reinforce direction |
+| `volatility` | Pink noise | Right | Narrow quiet hiss when calm → wide loud wash when volatile |
+| `price_move` | Piano arpeggio | Left | Ascending run = up, descending = down. More notes = bigger move |
+| `trade_rate` | Hi-hat | Right | 2 hits at 0 → 8 hits at 1, evenly spread |
+| `tone` | Triangle pad chord | Center | C major (tone=1) or A minor (tone=0) |
+| `spread` | Cowbell tick | Right | Filter opens with spread (muffled=tight, bright=wide) |
+| `spike` event | Crash cymbal | Center | Gain scales with event magnitude |
+| `price_move` event | Vibraphone bell | Center | High pitch = up, low = down. Gain scales with magnitude |
 
 ## Legacy References
 
-- **Sonic Pi originals** were removed from the repo (Strudel migration complete). Git history has them if needed.
+- **Sonic Pi tracks** and **earlier Strudel tracks** (`mezzanine.js`, `jazz_alerts.js`) were removed from the repo. Git history has them if needed.

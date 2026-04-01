@@ -6,13 +6,19 @@ A multi-user web app that turns Polymarket prediction market activity into gener
 
 **Repo:** GitHub (public)
 **License:** AGPL-3.0 (matching Strudel dependency)
+**Domain:** dam.fm (CloudFlare DNS/CDN/HTTPS → Lightsail)
 
 ## How to Run
 
 ```bash
-cd C:\Github\polymarket_dj
+# macOS
+source venv/bin/activate
+python server.py
+
+# Windows
 .\venv\Scripts\activate
 python server.py
+
 # Open http://localhost:8888
 # Pick a market from browse tabs or paste a Polymarket URL
 # Audio auto-starts on market selection (Play/Stop toggle in Audio panel)
@@ -35,7 +41,7 @@ CloudFlare → Nginx → Python aiohttp (data only) ←→ Polymarket APIs
 2. `polymarket/websocket.py` — WebSocket subscribes to asset IDs, receives price changes/trades/book updates
 3. `polymarket/scorer.py` — `MarketScorer` computes heat score (0-1) from price velocity, trade rate, volume, spread
 4. `mixer/mixer.py` — `AutonomousDJ` manages market list, live finance auto-rotation. Events dispatched via async callback (no OSC)
-5. `server.py` `broadcast_loop` — Per-client: normalizes raw data to 0–1, applies sensitivity power curve (`4^(1-2s)`), detects events, pushes JSON via WebSocket every 3s
+5. `server.py` `broadcast_loop` — Per-client: normalizes raw data to 0–1, applies sensitivity (power curve for activity metrics, window-length scaling for momentum/volatility), detects events with magnitudes, pushes JSON via WebSocket every 3s
 6. `frontend/audio-engine.js` — Strudel bridge: init, track lifecycle, data→pattern routing. Two track modes: `evaluateCode(data)` runs raw strudel code via `evaluate()` (identical to strudel.cc REPL); `pattern(data)` returns a Pattern object directly
 7. Track `.js` files — Self-contained Strudel tracks. Evaluate-mode tracks return strudel code strings; pattern-mode tracks return Pattern objects
 
@@ -54,7 +60,7 @@ CloudFlare → Nginx → Python aiohttp (data only) ←→ Polymarket APIs
 | `frontend/app.js`         | UI logic: browse tabs, market picker, sliders, now-playing display, dynamic track loader                              |
 | `frontend/ws-client.js`   | WebSocket client with auto-reconnect                                                                                  |
 | `frontend/audio-engine.js`| Strudel init, track registry, pattern lifecycle (two modes: `evaluate` for raw strudel code, `pattern` for Pattern objects), music theory utils |
-| `frontend/tracks/*.js`    | Track files (auto-discovered, dynamically loaded): `oracle.js` (alert piano chords), `mezzanine.js` (trip-hop), `jazz_alerts.js` (jazz trio + alert piano), `jazz_trio.js` (Autumn Leaves jazz trio via evaluate). Drop a new `.js` file here and restart the server — no other changes needed |
+| `frontend/tracks/*.js`    | Track files (auto-discovered, dynamically loaded): `oracle.js` (piano chords tracing price curve), `jazz_trio.js` (Late Night in Bb — jazz piano trio with bullish/bearish paradigms via evaluate), `diagnostic.js` (one sound per signal for audible data verification). Drop a new `.js` file here and restart the server — no other changes needed |
 | `frontend/build/`         | npm build for custom Strudel bundle (`@strudel/web` + `@strudel/soundfonts`). Run `cd frontend/build && npm run build` to regenerate `frontend/strudel-bundle.js` |
 | `deploy/`                 | Nginx config, systemd service, EC2 setup script                                                                       |
 
@@ -72,8 +78,8 @@ For deeper context, read the relevant doc below. **Only load what you need for t
 
 | Doc | Contents | Read when... |
 | --- | -------- | ------------ |
-| [`docs/data-interface.md`](docs/data-interface.md) | Data values pushed to clients (heat, price, velocity, etc.), event triggers, system state, tone hysteresis, outcome selection | Working on data pipeline, scorer, mixer, or understanding what data tracks receive |
-| [`docs/writing-tracks.md`](docs/writing-tracks.md) | How to write Strudel tracks (pattern interface, data mapping, synth mapping from Sonic Pi), existing track descriptions | Writing, editing, or reviewing browser tracks |
+| [`docs/data-interface.md`](docs/data-interface.md) | Data values pushed to clients (heat, price, momentum, volatility, etc.), sensitivity mechanics (window-scaling vs power-curve), event triggers with magnitudes, signal design reference | Working on data pipeline, scorer, mixer, or understanding what data tracks receive |
+| [`docs/writing-tracks.md`](docs/writing-tracks.md) | **Musician-facing brief**: how to write Strudel tracks, data signal table with musical mapping suggestions, signal combination guide, event handling, sound reference, existing track descriptions | Writing, editing, or reviewing browser tracks. **Give this doc to musicians.** |
 | [`docs/live-finance.md`](docs/live-finance.md) | Rolling BTC/ETH market patterns (5m/15m/hourly), slug generation, auto-rotation logic | Working on live finance rotation, crypto browse tab, or slug matching |
 | [`docs/web-ui-and-api.md`](docs/web-ui-and-api.md) | UI sections, WebSocket protocol, API endpoints, background loops, deployment | Modifying the web UI, WebSocket protocol, API endpoints, or deployment config |
 | [`docs/gotchas.md`](docs/gotchas.md) | Known issues: Polymarket API, browse/config, legacy code | Hit a weird bug, need to understand non-obvious constraints |
