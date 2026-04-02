@@ -84,39 +84,20 @@ const audioEngine = (() => {
       console.warn('[Audio] Master gain setup failed (non-fatal):', e);
     }
 
-    // Debug: intercept decodeAudioData to catch the 0-byte buffer with stack trace
+    // Patch decodeAudioData to silently skip 0-byte buffers.
+    // Some GM soundfont zones have empty sample data — these are padding
+    // entries that don't produce sound. The native API throws on empty
+    // buffers; intercept and return a short silent buffer instead.
     {
       const ctx = getAudioContext();
       const origDecode = ctx.decodeAudioData.bind(ctx);
-      ctx.decodeAudioData = function(buffer, ...args) {
+      ctx.decodeAudioData = function(buffer, successCb, errorCb) {
         if (!buffer || buffer.byteLength === 0) {
-          console.error('[Audio] decodeAudioData called with empty buffer. Stack:', new Error().stack);
+          const silent = ctx.createBuffer(1, 1, ctx.sampleRate);
+          if (successCb) successCb(silent);
+          return Promise.resolve(silent);
         }
-        const result = origDecode(buffer, ...args);
-        if (result && result.catch) {
-          result.catch(err => {
-            console.error('[Audio] decodeAudioData failed:', err.message,
-              'byteLength:', buffer ? buffer.byteLength : 'null',
-              'stack:', new Error().stack);
-          });
-        }
-        return result;
-      };
-
-      // Also intercept XMLHttpRequest for non-fetch audio loads
-      const origXHROpen = XMLHttpRequest.prototype.open;
-      const origXHRSend = XMLHttpRequest.prototype.send;
-      XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-        this._debugUrl = url;
-        return origXHROpen.call(this, method, url, ...rest);
-      };
-      XMLHttpRequest.prototype.send = function(...args) {
-        this.addEventListener('load', () => {
-          if (this.response instanceof ArrayBuffer && this.response.byteLength === 0) {
-            console.error('[Audio] XHR empty ArrayBuffer for:', this._debugUrl, 'status:', this.status);
-          }
-        });
-        return origXHRSend.apply(this, args);
+        return origDecode(buffer, successCb, errorCb);
       };
     }
 
