@@ -19,3 +19,4 @@ jobs:
             cd /opt/data_as_music
             git pull
             sudo systemctl restart data-as-music
+            sudo nginx -t && sudo systemctl reload nginx
