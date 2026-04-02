@@ -561,9 +561,11 @@ Assign each layer family a separate orbit to prevent effect bleed:
 | `"piano"` | `.s("piano")` | Salamander Grand Piano, multi-velocity |
 | `"gm_acoustic_bass"` | `.s("gm_acoustic_bass")` | GM upright bass |
 | `"gm_epiano1"` | `.s("gm_epiano1")` | Rhodes electric piano |
-| `"gm_vibraphone"` | `.s("gm_vibraphone")` | Vibraphone |
+| `"gm_vibraphone"` | `.s("gm_vibraphone").n(4)` | Vibraphone (use `.n(4)` for GeneralUserGS — see warning below) |
 | `"gm_tenor_sax"` | `.s("gm_tenor_sax")` | Tenor saxophone |
 | `"gm_*"` | `.s("gm_...")` | All 128 GM instruments (loaded on demand) |
+
+> **GM Soundfont data quality warning**: The WebAudioFont data (from `surikov/webaudiofontdata`) has corrupt/tiny zones in some soundfont variants — notably the default vibraphone (`n=0`, JCLive) has a broken zone for MIDI 84-108 (C6+) with only ~225 bytes of sample data, causing `decodeAudioData` failures. The bundle includes logging and silent-buffer fallback for these cases. When using GM instruments in high registers, prefer the **GeneralUserGS** variant (`.n(4)`) which has valid data across all zones. Other instruments may have similar issues with specific variants — check the console for `[Soundfont]` warnings.
 
 ### Drums (uzu-drumkit + Dirt-Samples)
 `bd` `sd` `hh` `oh` `cr` `rd` `rim` `cp` `cb` `ht` `mt` `lt`

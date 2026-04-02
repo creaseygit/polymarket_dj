@@ -214,7 +214,7 @@ const poolsideHouse = (() => {
       + `.degradeBy(${(parseFloat(degradeAmt) + 0.15).toFixed(2)})`
       + `.every(3, x => x.rev())`
       + `.rarely(x => x.add(note(2)))`
-      + `.s("gm_vibraphone").decay(0.2).sustain(0)`
+      + `.s("gm_vibraphone").n(4).decay(0.2).sustain(0)`
       + `.gain(${g})`
       + `.delay(0.3).delaytime(${(60 / 116 / 3).toFixed(4)}).delayfeedback(0.4)`
       + `.room(${reverbWet})`
