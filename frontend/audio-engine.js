@@ -11,7 +11,18 @@ const audioEngine = (() => {
   let masterVolume = 0.7;
   let _masterGainNode = null;  // Web Audio GainNode on master output
   let latestData = {};
+  let _targetData = {};          // raw server values — latestData slides toward these
   let _lastTrackPat = null;  // track pattern identity — skip .play() when unchanged
+
+  // ── Signal damping ──────────────────────────────────────
+  // Smooths continuous musical signals via EMA so the music never pops
+  // between states.  Discrete/positional values pass through instantly.
+  // Alpha 0.4 per 3s tick ≈ reaches 90% of a jump in ~10 seconds.
+  const DAMPING_ALPHA = 0.4;
+  const DAMPED_SIGNALS = new Set([
+    'heat', 'velocity', 'trade_rate', 'spread',
+    'volatility', 'momentum', 'price_move',
+  ]);
 
   // ── Cycle-boundary buffering ──
   // Data/events/volume changes are buffered and applied at the next cycle
@@ -158,9 +169,12 @@ const audioEngine = (() => {
       _playEpoch = getAudioContext().currentTime;
     } catch (e) { _playEpoch = 0; }
 
-    // Merge any pending data so the first play uses latest values
+    // Reset damping state — new track/market starts clean
+    _targetData = {};
+    // Merge any pending data so the first play uses latest values (no damping on first frame)
     if (_pendingData) {
       latestData = { ...latestData, ..._pendingData };
+      _targetData = { ...latestData };
       _pendingData = null;
     }
 
@@ -299,9 +313,21 @@ const audioEngine = (() => {
 
   /** Apply all buffered changes at a cycle boundary. */
   function _flushAtBoundary() {
-    // Merge pending data
+    // Merge pending data with damping — continuous signals slide toward
+    // the target value instead of jumping, preventing jarring transitions.
     if (_pendingData) {
-      latestData = { ...latestData, ..._pendingData };
+      _targetData = { ..._targetData, ..._pendingData };
+      const merged = { ...latestData };
+      for (const [key, val] of Object.entries(_targetData)) {
+        if (DAMPED_SIGNALS.has(key) && typeof val === 'number' && typeof merged[key] === 'number') {
+          merged[key] = merged[key] + DAMPING_ALPHA * (val - merged[key]);
+          // Snap to target when close enough to avoid eternal creep
+          if (Math.abs(merged[key] - val) < 0.001) merged[key] = val;
+        } else {
+          merged[key] = val;
+        }
+      }
+      latestData = merged;
       _pendingData = null;
     }
 
@@ -343,6 +369,7 @@ const audioEngine = (() => {
     currentTrackDef = null;
     currentTrackName = null;
     _lastTrackPat = null;
+    _targetData = {};
   }
 
   function setVolume(v) {
@@ -409,13 +436,14 @@ const audioEngine = (() => {
   function getCurrentTrack() { return currentTrackDef; }
   function getCurrentTrackName() { return currentTrackName; }
   function getLatestData() { return { ...latestData }; }
+  function getTargetData() { return { ..._targetData }; }
   function isPlaying() { return playing; }
 
   return {
     init, selectTrack, stop, setVolume, onMarketData,
     handleEvent, registerTrack, resumeIfSuspended,
     getTrackRegistry, getCurrentTrack, getCurrentTrackName,
-    getLatestData, isPlaying,
+    getLatestData, getTargetData, isPlaying,
   };
 })();
 
