@@ -29,6 +29,9 @@ const wsClient = (() => {
           case 'market_info':
             if (typeof onWsMarketInfo === 'function') onWsMarketInfo(msg.market);
             break;
+          case 'listeners':
+            if (typeof onWsListeners === 'function') onWsListeners(msg.count);
+            break;
           case 'event':
             if (typeof onWsEvent === 'function') onWsEvent(msg);
             break;

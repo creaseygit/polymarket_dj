@@ -478,6 +478,11 @@ function onWsEvent(msg) {
   if (msg.event === 'resolved') log('Event: market resolved (' + (msg.result > 0 ? 'Yes' : 'No') + ')');
 }
 
+function onWsListeners(count) {
+  const el = document.getElementById('listeners');
+  if (el) el.textContent = count > 1 ? `${count} listeners` : '';
+}
+
 function onWsConnected() {
   document.getElementById('ws-dot').className = 'dot dot-on';
   document.getElementById('ws-label').textContent = 'Connected';

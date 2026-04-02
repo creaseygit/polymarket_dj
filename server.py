@@ -671,6 +671,16 @@ async def _handle_resolution_for_sessions(msg: dict):
 
 # ── WebSocket handler ─────────────────────────────────────
 
+async def _broadcast_listener_count():
+    """Send current listener count to all connected clients."""
+    count = state.sessions.active_count
+    for session in state.sessions.all_sessions():
+        try:
+            await session.ws.send_json({"type": "listeners", "count": count})
+        except Exception:
+            pass
+
+
 async def handle_ws(request):
     """WebSocket endpoint for browser clients."""
     if state.sessions.active_count >= MAX_CLIENTS:
@@ -682,6 +692,9 @@ async def handle_ws(request):
     session = ClientSession(ws)
     state.sessions.add(session)
     print(f"[WS:{session.client_id}] Connected ({state.sessions.active_count} clients)", flush=True)
+
+    # Notify all clients of updated listener count
+    await _broadcast_listener_count()
 
     # Send initial status
     await ws.send_json({
@@ -752,6 +765,7 @@ async def handle_ws(request):
     finally:
         state.sessions.remove(session.client_id)
         print(f"[WS:{session.client_id}] Disconnected ({state.sessions.active_count} clients)", flush=True)
+        await _broadcast_listener_count()
 
     return ws
 
