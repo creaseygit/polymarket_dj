@@ -89,19 +89,19 @@ const diggingInTheMarkets = (() => {
     return code;
   }
 
-  // ── Rhodes: jazz voicings, warm, slightly detuned ──
+  // ── Rhodes: jazz voicings, warm — all diatonic progressions ──
   function keysCode(tone, momSign, intBand, energy, volat, gainMul) {
     let changes;
     if (tone === 1) {
-      // Bb major — warm, dreamy
-      if (momSign > 0)      changes = "<Bb^7 Cm9 Dm7 Eb^7>";      // rising roots
-      else if (momSign < 0) changes = "<Bb^7 Am7b5 Ab^7 Gm7>";    // falling roots
-      else                  changes = "<Bb^7 Gm9 Cm7 F7>";        // ii-V turnaround
+      // Bb major — diatonic, roots follow momentum direction
+      if (momSign > 0)      changes = "<Bb^7 Cm7 Dm7 Eb^7>";      // I→ii→iii→IV rising
+      else if (momSign < 0) changes = "<Eb^7 Dm7 Cm7 Bb^7>";      // IV→iii→ii→I falling
+      else                  changes = "<Bb^7 Gm7 Cm7 F7>";        // I→vi→ii→V turnaround
     } else {
-      // G minor — melancholic
-      if (momSign > 0)      changes = "<Gm9 Am7b5 Bb^7 Cm7>";     // rising roots
-      else if (momSign < 0) changes = "<Gm9 Fm7 Eb^7 D7>";        // falling roots
-      else                  changes = "<Gm9 Eb^7 Cm7 D7>";        // minor turnaround
+      // G minor — diatonic, roots follow momentum direction
+      if (momSign > 0)      changes = "<Gm7 Bb^7 Cm7 Dm7>";       // i→III→iv→v rising
+      else if (momSign < 0) changes = "<Dm7 Cm7 Bb^7 Gm7>";       // v→iv→III→i falling
+      else                  changes = "<Gm7 Eb^7 Cm7 D7>";        // minor turnaround
     }
 
     const g = (0.20 * energy * gainMul).toFixed(3);
@@ -130,25 +130,25 @@ const diggingInTheMarkets = (() => {
 
     let bassPattern;
     if (tone === 1) {
-      // Bb major world — walks span a wider range for clear direction
+      // Bb major — bass follows chord roots (Bb,Cm,Dm,Eb)
       if (intBand >= 1) {
-        if (momSign > 0)      bassPattern = "<[Bb1 ~ C2 ~] [D2 ~ Eb2 ~] [F2 ~ G2 ~] [A2 ~ Bb2 ~]>";
-        else if (momSign < 0) bassPattern = "<[Bb2 ~ A2 ~] [G2 ~ F2 ~] [Eb2 ~ D2 ~] [C2 ~ Bb1 ~]>";
+        if (momSign > 0)      bassPattern = "<[Bb1 ~ D2 ~] [C2 ~ Eb2 ~] [D2 ~ F2 ~] [Eb2 ~ G2 ~]>";
+        else if (momSign < 0) bassPattern = "<[Eb2 ~ D2 ~] [D2 ~ C2 ~] [C2 ~ Bb1 ~] [Bb1 ~ A1 ~]>";
         else                  bassPattern = "<[Bb1 ~ ~ ~] [G1 ~ ~ ~] [C2 ~ ~ ~] [F1 ~ ~ ~]>";
       } else {
-        if (momSign > 0)      bassPattern = "<Bb1 D2 F2 Bb2>";
-        else if (momSign < 0) bassPattern = "<Bb2 F2 D2 Bb1>";
+        if (momSign > 0)      bassPattern = "<Bb1 C2 D2 Eb2>";
+        else if (momSign < 0) bassPattern = "<Eb2 D2 C2 Bb1>";
         else                  bassPattern = "<Bb1 G1 C2 F1>";
       }
     } else {
-      // G minor world — walks span a wider range for clear direction
+      // G minor — bass follows chord roots (Gm,Bb,Cm,Dm)
       if (intBand >= 1) {
-        if (momSign > 0)      bassPattern = "<[G1 ~ A1 ~] [Bb1 ~ C2 ~] [D2 ~ Eb2 ~] [F2 ~ G2 ~]>";
-        else if (momSign < 0) bassPattern = "<[G2 ~ F2 ~] [Eb2 ~ D2 ~] [C2 ~ Bb1 ~] [A1 ~ G1 ~]>";
+        if (momSign > 0)      bassPattern = "<[G1 ~ Bb1 ~] [Bb1 ~ D2 ~] [C2 ~ Eb2 ~] [D2 ~ F2 ~]>";
+        else if (momSign < 0) bassPattern = "<[D2 ~ C2 ~] [C2 ~ Bb1 ~] [Bb1 ~ A1 ~] [A1 ~ G1 ~]>";
         else                  bassPattern = "<[G1 ~ ~ ~] [Eb1 ~ ~ ~] [C2 ~ ~ ~] [D2 ~ ~ ~]>";
       } else {
-        if (momSign > 0)      bassPattern = "<G1 Bb1 D2 G2>";
-        else if (momSign < 0) bassPattern = "<G2 D2 Bb1 G1>";
+        if (momSign > 0)      bassPattern = "<G1 Bb1 C2 D2>";
+        else if (momSign < 0) bassPattern = "<D2 C2 Bb1 G1>";
         else                  bassPattern = "<G1 Eb1 C2 D2>";
       }
     }
@@ -158,21 +158,21 @@ const diggingInTheMarkets = (() => {
       + `.gain(${g}).orbit(3);\n`;
   }
 
-  // ── Melody: sparse pentatonic phrases with delay ──
+  // ── Melody: pentatonic runs with delay ──
   function melodyCode(tone, momSign, intBand, energy, volat, gainMul) {
     const g = (0.18 * energy * gainMul).toFixed(3);
     const scale = tone === 1 ? "Bb4:pentatonic" : "G4:minor pentatonic";
 
-    // Directional contour — each bar starts higher/lower than the last
+    // Flowing runs — connected notes, not isolated stabs
     let melodyPattern;
     if (momSign > 0) {
       melodyPattern = intBand >= 2
-        ? "[0 ~ 2 ~] [2 ~ 4 ~] [4 ~ 5 ~] [5 ~ 6 ~]"       // clear upward staircase
-        : "[0 ~ ~ ~] [~ 2 ~ ~] [~ ~ 4 ~] [~ ~ ~ 6]";       // sparse but clearly climbing
+        ? "[0 1 2 ~] [2 4 5 ~] [4 5 6 ~] [5 6 7 ~]"         // running upward
+        : "[0 1 2 ~] [~ ~ ~ ~] [4 5 6 ~] [~ ~ ~ ~]";        // sparse upward runs
     } else if (momSign < 0) {
       melodyPattern = intBand >= 2
-        ? "[6 ~ 5 ~] [5 ~ 4 ~] [4 ~ 2 ~] [2 ~ 0 ~]"       // clear downward staircase
-        : "[6 ~ ~ ~] [~ 5 ~ ~] [~ ~ 4 ~] [~ ~ ~ 2]";       // sparse but clearly falling
+        ? "[7 6 5 ~] [6 5 4 ~] [5 4 2 ~] [4 2 0 ~]"         // running downward
+        : "[7 6 5 ~] [~ ~ ~ ~] [4 2 1 ~] [~ ~ ~ ~]";        // sparse downward runs
     } else {
       melodyPattern = intBand >= 2
         ? "[0|2] ~ [4|5] ~ [~|2] ~ [4|0] ~"                 // meandering
@@ -182,8 +182,13 @@ const diggingInTheMarkets = (() => {
     const degradeAmt = (0.15 + volat * 0.3).toFixed(2);
     const delaytime = (60 / 80 / 2).toFixed(4);  // 8th note delay
 
+    // Directional patterns: iter only (keep direction consistent)
+    // Flat patterns: iter + palindrome for wandering variety
+    const transforms = momSign === 0
+      ? `.iter(4).palindrome()` : `.iter(4)`;
+
     return `$: note("${melodyPattern}").scale("${scale}")`
-      + `.iter(4).palindrome()`
+      + transforms
       + `.degradeBy(${degradeAmt})`
       + `.rarely(x => x.add(note(5)))`
       + `.s("piano").decay(0.35).sustain(0)`
@@ -208,14 +213,14 @@ const diggingInTheMarkets = (() => {
 
     let padNotes;
     if (tone === 1) {
-      // Bb major voicings — wider climb/fall for audible direction
-      if (momSign > 0)      padNotes = "<[Bb3,D4,F4] [C4,Eb4,G4] [D4,F4,Bb4] [F4,A4,C5]>";
-      else if (momSign < 0) padNotes = "<[F4,A4,C5] [D4,F4,Bb4] [Bb3,D4,F4] [G3,Bb3,D4]>";
+      // Bb major — triads matching the keys chord progression
+      if (momSign > 0)      padNotes = "<[Bb3,D4,F4] [C4,Eb4,G4] [D4,F4,A4] [Eb4,G4,Bb4]>";
+      else if (momSign < 0) padNotes = "<[Eb4,G4,Bb4] [D4,F4,A4] [C4,Eb4,G4] [Bb3,D4,F4]>";
       else                  padNotes = "<[Bb3,D4,F4] [G3,Bb3,D4] [C4,Eb4,G4] [F3,A3,C4]>";
     } else {
-      // G minor voicings — wider climb/fall for audible direction
-      if (momSign > 0)      padNotes = "<[G3,Bb3,D4] [Bb3,D4,F4] [C4,Eb4,G4] [Eb4,G4,Bb4]>";
-      else if (momSign < 0) padNotes = "<[Eb4,G4,Bb4] [C4,Eb4,G4] [G3,Bb3,D4] [D3,F#3,A3]>";
+      // G minor — triads matching the keys chord progression
+      if (momSign > 0)      padNotes = "<[G3,Bb3,D4] [Bb3,D4,F4] [C4,Eb4,G4] [D4,F4,A4]>";
+      else if (momSign < 0) padNotes = "<[D4,F4,A4] [C4,Eb4,G4] [Bb3,D4,F4] [G3,Bb3,D4]>";
       else                  padNotes = "<[G3,Bb3,D4] [Eb3,G3,Bb3] [C3,Eb3,G3] [D3,F#3,A3]>";
     }
 
