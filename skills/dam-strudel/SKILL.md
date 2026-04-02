@@ -241,7 +241,7 @@ wchoose(["piano", 8], ["gm_vibraphone", 2])
 **Combine these.** A melody that uses `.iter(4).sometimes(rev).degradeBy(0.2)` won't truly repeat for many cycles. The goal is a melody that feels composed but never quite the same twice.
 
 **Map data to melodic parameters** — don't just use data for gain:
-- `momentum` → melodic contour direction (see Design Principles §4)
+- `momentum` → melodic contour direction (see Design Principles §3 — Price Direction Must Be Audible)
 - `volatility` → `.degradeBy()` amount (uncertain market = more fragmented melody)
 - `price` → note range or octave (high price = brighter register)
 - `trade_rate` → subdivision (`.fast()` or pattern density)
@@ -297,7 +297,74 @@ const chordsFalling = "<Cm7 Bbm7 Ab^7 Gm7>";
 - Bearish + uptrend = minor ascending (recovering, hopeful tension)
 - Bearish + downtrend = minor descending (things getting worse)
 
-### 4. Percussion Must Have Life
+### 4. Every Layer Needs Dynamic Range
+
+This is the most important principle for sounding musical. **Every instrument or group of instruments must have progressive stages of intensity that track the market continuously** — not just binary on/off at a heat threshold.
+
+Gain alone is not enough. A four-on-the-floor kick at gain 0.05 is still a four-on-the-floor kick — it sounds like a full drum pattern turned down, not like a quiet market. True dynamic range means the **pattern itself changes**: fewer notes, simpler rhythms, sparser arrangement at low intensity, building up to full density at high intensity.
+
+**The principle applies to every layer:**
+
+#### Percussion (as a group)
+
+Percussion should be designed as a unified group with stages. Each stage adds instruments and rhythmic complexity. The stages should be tied to the market metrics that represent rhythmic energy (`heat` for overall density, `trade_rate` + `velocity` for complexity).
+
+```javascript
+// BAD: Drums are either on or off
+code += h > 0.3
+  ? `$: s("bd bd bd bd").gain(${g});\n`
+  : '$: silence;\n';
+
+// GOOD: Progressive percussion stages
+function percCode(h, intBand, energy, gainMul) {
+  // Stage 1 (h > 0.15): Just a sparse kick — downbeat only
+  // Stage 2 (h > 0.3):  Kick thickens (half-time), hats appear (quarters)
+  // Stage 3 (h > 0.45): Full kick (four-on-floor), hats at 8ths, snare enters
+  // Stage 4 (h > 0.65): Add fills, 16th hats, open hats, rim patterns
+  // Gain ALSO scales with energy within each stage
+}
+```
+
+Pre-compose the kick pattern for each stage:
+```javascript
+// Kick stages — pattern density tracks heat
+const kickPattern =
+  h < 0.30 ? "bd ~ ~ ~"           :  // downbeat only — minimal pulse
+  h < 0.45 ? "bd ~ bd ~"          :  // half-time — building
+  h < 0.65 ? "bd bd bd bd"        :  // four-on-the-floor — driving
+             "bd bd bd bd"         ;  // same pattern, but add fills via .every()
+
+// Hi-hat stages — subdivision tracks intBand/trade_rate
+const hhPattern =
+  intBand === 0 ? "hh ~ hh ~"     :  // quarter notes
+  intBand === 1 ? "hh*8"          :  // 8th notes
+                  "hh*16"          ;  // 16th notes with ghost notes
+```
+
+#### Melodic instruments (bass, chords, melody)
+
+Same principle — pattern complexity should scale with the market:
+```javascript
+// Bass: from whole notes → walking quarters → busy eighths
+const bassPattern =
+  intBand === 0 ? "<C2 A2 D2 G2>"                          :  // one note per bar
+  intBand === 1 ? "<[C2 ~ E2 ~] [A2 ~ C3 ~]>"             :  // half-time groove
+                  "<[C2 D2 E2 F2] [A2 B2 C3 D3]>"          ;  // walking line
+
+// Chords: from sustained pads → rhythmic stabs → busy comping
+const chordStruct =
+  intBand === 0 ? "x ~ ~ ~"                                :  // one hit per bar
+  intBand === 1 ? "~ [~@2 x] ~ [~@2 x]"                   :  // offbeat stabs
+                  "~ [~@2 x] [~ x] [~@2 x]"               ;  // busier comping
+```
+
+#### Why this matters for warmup
+
+The server applies a smoothstep warmup tween that brings activity signals (heat, trade_rate, velocity, etc.) from 0 to real values over ~18 seconds. If your patterns respond to these signals with genuine dynamic range — sparse patterns at low values, building to full density at high — then the warmup automatically sounds like a natural intro: the track literally builds up from nothing. If your patterns are binary on/off, the warmup can only turn gain down, which sounds like a muted full arrangement rather than a true build.
+
+**Design every layer so it sounds intentionally musical at every point in the 0→1 range**, not just at the top.
+
+### 5. Percussion Must Have Life
 
 Even genres that demand steady four-on-the-floor kicks need **micro-variation** in the supporting percussion. Perfectly uniform hi-hats sound mechanical and lifeless over long listening sessions.
 
@@ -336,7 +403,7 @@ stack(
 - `trade_rate` → Euclidean density (`s("hh").struct("x(${pulses},16)")`)
 - `velocity` → subdivision (8ths vs 16ths)
 - `volatility` → `.degradeBy()` or probability of fills
-- `heat` → number of active percussion layers (not just gain)
+- `heat` → number of active percussion layers AND pattern density (see §4)
 
 ---
 
@@ -405,10 +472,12 @@ Design your signal routing before writing code. **Every layer must have a condit
 
 | Layer | Active when | Driven by | Silent when |
 |-------|------------|-----------|-------------|
-| Bass | `heat > 0.2` | `tone` (key), `heat` (gain), `volatility` (LPF), **`momentum` (walking direction)** | Low activity — pad carries alone |
-| Drums | `heat > 0.3` | `heat` (gain), `trade_rate` + `velocity` (complexity band) | Market sleeping — no rhythm needed |
-| Pad/Comp | `heat > 0.1` | `tone` (chord quality), `heat` (gain), `volatility` (detuning), **`momentum` (root motion direction)** | Last to go, first to return |
-| Melody | `\|momentum\| > 0.2` or `heat > 0.5` | **`momentum` (contour direction)**, `tone` (scale), `volatility` (fragmentation) | Must use generative techniques (see Design Principles §2) |
+| Kick | `heat > 0.15` | `heat` (pattern density: sparse → half-time → four-on-floor), `heat` (gain) | Very low activity |
+| Percussion | `heat > 0.25` | `heat` (which instruments active), `trade_rate` + `velocity` (intBand → subdivision/complexity) | Low activity — kick may pulse alone |
+| Bass | `heat > 0.2` | `tone` (key), `heat` (gain), `intBand` (pattern density: whole notes → walking), `volatility` (LPF), **`momentum` (walking direction)** | Low activity — pad carries alone |
+| Chords/Comp | `heat > 0.15` | `tone` (chord quality), `heat` (gain), `intBand` (sustained → rhythmic stabs), `volatility` (detuning), **`momentum` (root motion direction)** | Last to go, first to return |
+| Melody | `\|momentum\| > 0.2` or `heat > 0.5` | **`momentum` (contour direction)**, `tone` (scale), `intBand` (density), `volatility` (fragmentation) | Must use generative techniques (see Design Principles §2) |
+| Pad | `heat > 0.1` | `tone`, `heat` (gain), `volatility` (reverb/detuning), **`momentum` (voicing direction)** | Last layer standing |
 | Texture | `volatility > 0.3` | `volatility` (gain), `spread` (filter) | Calm markets |
 | Events | On trigger | `spike` (magnitude), `price_move` (direction + magnitude) | Always conditional |
 
@@ -422,10 +491,13 @@ const rawIntensity = 0.6 * tradeRate + 0.4 * velocity;
 const intBand = rawIntensity < 0.33 ? 0 : rawIntensity < 0.66 ? 1 : 2;
 ```
 
-Pre-compose patterns for each band:
-- **Band 0 (low)**: Quarter notes, sparse, simple rhythms
-- **Band 1 (mid)**: Eighth notes, ghost notes, more voices
-- **Band 2 (high)**: Dense subdivision, fills, chromatic movement
+Pre-compose **complete patterns for each band** — don't just scale gain. Each band should sound like a deliberate arrangement choice:
+
+- **Band 0 (low)**: Quarter-note hats, sparse kick (downbeat or half-time), no snare, whole-note bass, sustained chords
+- **Band 1 (mid)**: 8th-note hats, full kick, snare enters, walking bass, offbeat chord stabs
+- **Band 2 (high)**: 16th-note hats with ghost notes, fills, rim patterns, busy bass runs, active comping
+
+**Combine intBand with heat for two-axis control:** `intBand` controls pattern complexity/density, `heat` controls which layers are active and their gain. This gives a wide dynamic range — from a single sparse kick at low heat/low intBand, to a full kit with fills at high heat/high intBand.
 
 ### 5. Write the Code
 Structure every track the same way. Extract voice code into separate functions, pass `getGain()` multipliers:
@@ -616,11 +688,12 @@ See [examples/poolside_house.js](examples/poolside_house.js) — a relaxed dayti
 - **Extracted voice functions**: `kickCode()`, `chordsCode()`, `bassCode()`, `percCode()`, `melodyCode()`, `counterCode()`, `padCode()` — each receives a `gainMul` from `getGain()`
 - **Directional contour** (Design Principles §3): melody phrases ascend/descend with momentum, bass walks up/down, chord root motion and pad voicings follow market direction. Sideways market gets meandering patterns with random choices.
 - **Generative melody** (Design Principles §2): `.iter(4)`, `.palindrome()`, `.degradeBy()` driven by volatility, `|` random choice in note patterns, `.rarely(add(note(7)))` for octave sparkle
-- **Living percussion** (Design Principles §4): perlin-humanized hi-hat velocity, `.sometimes()` accents, `.rarely(ply(2))` flams, `.iter()` rotating emphasis, `.every(4, struct("x(5,8)"))` euclidean variation
+- **Living percussion** (Design Principles §5): perlin-humanized hi-hat velocity, `.sometimes()` accents, `.rarely(ply(2))` flams, `.iter()` rotating emphasis, `.every(4, struct("x(5,8)"))` euclidean variation
 - **Layer stripping** (Design Principles §1): pad (>0.1) → rhodes (>0.15) → bass (>0.25) → drums (>0.3) → melody (momentum-driven) → counter-melody (>0.6). At heat=0, all blocks emit silence.
 - Rhodes with offbeat stabs, jazz voicings, 3-tier percussion, bouncy walking bass
 
 **Known areas for improvement:**
+- **Percussion lacks dynamic range** (Design Principles §4): kick is binary (off below heat 0.3, full four-on-the-floor above). Needs progressive stages (sparse → half-time → full → fills). Same for hats, snare, and supporting percussion. All percussion instruments should build up continuously with the market, not switch on at full density.
 - Could benefit from a texture/atmosphere layer (filtered noise, nature-like ambience) at mid-heat
 - Counter-melody could use a different timbre (vibraphone?) to differentiate from main melody
 

@@ -32,12 +32,27 @@ const poolsideHouse = (() => {
   // getGain() for mastering page support.
   // ════════════════════════════════════════════════════════════
 
-  // ── Kick ──
-  function kickCode(energy, gainMul) {
+  // ── Kick (progressive: sparse → half-time → four-on-the-floor → fills) ──
+  function kickCode(h, intBand, energy, gainMul) {
     const g = (0.35 * energy * gainMul).toFixed(3);
-    return `$: s("bd bd bd bd").gain(${g})`
-      // Subtle velocity humanization — not robotic
-      + `.gain(perlin.range(${(0.3 * energy * gainMul).toFixed(3)}, ${g}))`
+    const gLo = (0.28 * energy * gainMul).toFixed(3);
+
+    // Pattern density tracks heat
+    let pattern;
+    let extras = '';
+    if (h < 0.30) {
+      pattern = "bd ~ ~ ~";              // downbeat only — gentle pulse
+    } else if (h < 0.50) {
+      pattern = "bd ~ bd ~";             // half-time — building
+    } else {
+      pattern = "bd bd bd bd";           // four-on-the-floor — driving
+      if (intBand >= 2 && h >= 0.65) {
+        extras = `.every(7, x => x.ply(2))`;  // occasional kick double
+      }
+    }
+
+    return `$: s("${pattern}").gain(perlin.range(${gLo}, ${g}))`
+      + extras
       + `.lpf(100).orbit(4);\n`;
   }
 
@@ -99,36 +114,61 @@ const poolsideHouse = (() => {
       + `.gain(${g}).orbit(3);\n`;
   }
 
-  // ── Percussion (returns 3 $: blocks) ──
-  function percCode(intBand, energy, reverbWet, gainMul) {
+  // ── Percussion (returns 3 $: blocks — each instrument has its own heat threshold) ──
+  function percCode(h, intBand, energy, reverbWet, gainMul) {
     const gLo = (0.1 * energy * gainMul).toFixed(3);
     const gHi = (0.25 * energy * gainMul).toFixed(3);
-    let code = '';
+    const gAccent = (0.35 * energy * gainMul).toFixed(3);
+    let hhCode, clapCode, supportCode;
 
-    if (intBand === 0) {
-      code += `$: s("hh*8").gain(perlin.range(${gLo}, ${gHi})).hpf(9000)`
-        + `.iter(4).pan(0.6).orbit(4);\n`;
-      code += `$: silence;\n`;
-      code += `$: silence;\n`;
+    // ── Hi-hats (h > 0.20): quarter → 8ths → 16ths ──
+    if (h < 0.20) {
+      hhCode = '$: silence;\n';
+    } else if (intBand === 0) {
+      hhCode = `$: s("hh*4").gain(perlin.range(${gLo}, ${gHi})).hpf(9000)`
+        + `.pan(0.6).orbit(4);\n`;
     } else if (intBand === 1) {
-      code += `$: s("hh*8").gain(perlin.range(${gLo}, ${gHi})).hpf(9000)`
-        + `.sometimes(x => x.gain(${(0.35 * energy * gainMul).toFixed(3)}))`
+      hhCode = `$: s("hh*8").gain(perlin.range(${gLo}, ${gHi})).hpf(9000)`
+        + `.sometimes(x => x.gain(${gAccent}))`
         + `.iter(4).pan(0.6).orbit(4);\n`;
-      code += `$: s("~ cp ~ cp").gain(${(0.2 * energy * gainMul).toFixed(3)}).room(${reverbWet}).pan(0.55).orbit(4);\n`;
-      code += `$: s("oh").struct("~ x ~ ~").degradeBy(0.3).gain(${(0.1 * energy * gainMul).toFixed(3)}).hpf(7000).pan(0.65).orbit(4);\n`;
     } else {
-      code += `$: s("hh*16").gain(perlin.range(${gLo}, ${gHi})).hpf(9000)`
-        + `.sometimes(x => x.gain(${(0.35 * energy * gainMul).toFixed(3)}))`
+      hhCode = `$: s("hh*16").gain(perlin.range(${gLo}, ${gHi})).hpf(9000)`
+        + `.sometimes(x => x.gain(${gAccent}))`
         + `.rarely(x => x.ply(2))`
         + `.every(4, x => x.struct("x(5,8)"))`
         + `.pan(0.6).orbit(4);\n`;
-      code += `$: s("~ cp ~ cp").gain(${(0.2 * energy * gainMul).toFixed(3)})`
+    }
+
+    // ── Clap (h > 0.35): beat 2 → beats 2&4 → 2&4 with doubles ──
+    if (h < 0.35) {
+      clapCode = '$: silence;\n';
+    } else if (intBand === 0) {
+      clapCode = `$: s("~ cp ~ ~").gain(${(0.15 * energy * gainMul).toFixed(3)})`
+        + `.room(${reverbWet}).pan(0.55).orbit(4);\n`;
+    } else if (intBand === 1) {
+      clapCode = `$: s("~ cp ~ cp").gain(${(0.2 * energy * gainMul).toFixed(3)})`
+        + `.room(${reverbWet}).pan(0.55).orbit(4);\n`;
+    } else {
+      clapCode = `$: s("~ cp ~ cp").gain(${(0.2 * energy * gainMul).toFixed(3)})`
         + `.every(7, x => x.ply(2))`
         + `.room(${reverbWet}).pan(0.55).orbit(4);\n`;
-      code += `$: s("rim").struct("x(3,8)").gain(${(0.12 * energy * gainMul).toFixed(3)})`
+    }
+
+    // ── Supporting perc (h > 0.50): sparse oh → oh present → rim euclidean ──
+    if (h < 0.50) {
+      supportCode = '$: silence;\n';
+    } else if (intBand === 0) {
+      supportCode = `$: s("oh").struct("~ ~ ~ x").degradeBy(0.4)`
+        + `.gain(${(0.08 * energy * gainMul).toFixed(3)}).hpf(7000).pan(0.65).orbit(4);\n`;
+    } else if (intBand === 1) {
+      supportCode = `$: s("oh").struct("~ x ~ ~").degradeBy(0.3)`
+        + `.gain(${(0.1 * energy * gainMul).toFixed(3)}).hpf(7000).pan(0.65).orbit(4);\n`;
+    } else {
+      supportCode = `$: s("rim").struct("x(3,8)").gain(${(0.12 * energy * gainMul).toFixed(3)})`
         + `.iter(3).room(0.3).pan(0.7).orbit(4);\n`;
     }
-    return code;
+
+    return hhCode + clapCode + supportCode;
   }
 
   // ── Plucked synth melody ──
@@ -262,9 +302,9 @@ const poolsideHouse = (() => {
       // ── 4. Build code ──
       let code = "setcpm(29);\n\n";
 
-      // Kick — active when heat > 0.3
-      code += h > 0.3
-        ? kickCode(energy, this.getGain('kick'))
+      // Kick — progressive from heat 0.15 (sparse → half-time → four-on-floor)
+      code += h > 0.15
+        ? kickCode(h, intBand, energy, this.getGain('kick'))
         : '$: silence;\n';
 
       // Rhodes chords — active when heat > 0.15
@@ -277,12 +317,9 @@ const poolsideHouse = (() => {
         ? bassCode(tone, momSign, intBand, energy, h, this.getGain('bass'))
         : '$: silence;\n';
 
-      // Percussion (3 blocks) — active when heat > 0.3
-      if (h > 0.3) {
-        code += percCode(intBand, energy, reverbWet, this.getGain('perc'));
-      } else {
-        code += '$: silence;\n$: silence;\n$: silence;\n';
-      }
+      // Percussion (3 blocks) — progressive entry per instrument
+      // (hats > 0.20, clap > 0.35, supporting > 0.50)
+      code += percCode(h, intBand, energy, reverbWet, this.getGain('perc'));
 
       // Melody — active when |momentum| > 0.2 or heat > 0.5
       code += (Math.abs(mom) > 0.2 || h > 0.5)
