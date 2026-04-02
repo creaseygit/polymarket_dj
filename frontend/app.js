@@ -10,21 +10,18 @@ let audioRunning = false;
 
 // ── ET → local time conversion for market names ──
 function convertETtoLocal(text) {
-  // Match patterns like "April 2, 3:50AM-3:55AM ET" or "January 15, 12:00PM ET"
+  // Match patterns like "April 2, 3:50 AM - 3:55 AM ET" or "April 2, 3:50AM-3:55AM ET"
   return text.replace(
-    /(\w+ \d{1,2}),?\s+(\d{1,2}:\d{2}(?:AM|PM))(?:\s*-\s*(\d{1,2}:\d{2}(?:AM|PM)))?\s+ET\b/gi,
+    /(\w+ \d{1,2}),?\s+(\d{1,2}:\d{2}\s*(?:AM|PM))(?:\s*-\s*(\d{1,2}:\d{2}\s*(?:AM|PM)))?\s+ET\b/gi,
     (match, datePart, time1, time2) => {
       try {
         const year = new Date().getFullYear();
+        // Normalize "3:50AM" → "3:50 AM" (Date() requires the space)
+        const normTime = (t) => t.replace(/(\d)(AM|PM)/i, '$1 $2');
         const parseET = (dateStr, timeStr) => {
-          // Parse "April 2" + "3:50AM" in America/New_York
-          const dt = new Date(`${dateStr}, ${year} ${timeStr}`);
-          if (isNaN(dt)) return null;
-          // Construct a date explicitly in ET
-          const etStr = `${dateStr}, ${year} ${timeStr} EDT`;
-          let etDate = new Date(etStr);
-          // Fallback: try EST if EDT fails
-          if (isNaN(etDate)) etDate = new Date(`${dateStr}, ${year} ${timeStr} EST`);
+          const ts = normTime(timeStr);
+          let etDate = new Date(`${dateStr}, ${year} ${ts} EDT`);
+          if (isNaN(etDate)) etDate = new Date(`${dateStr}, ${year} ${ts} EST`);
           if (isNaN(etDate)) return null;
           return etDate;
         };
