@@ -10,14 +10,19 @@ let audioRunning = false;
 
 // ── ET → local time conversion for market names ──
 function convertETtoLocal(text) {
-  // Match patterns like "April 2, 3:50 AM - 3:55 AM ET" or "April 2, 3:50AM-3:55AM ET"
+  // Match: "April 2, 4:25AM–4:30AM ET", "April 2, 4AM ET", "April 2, 4:25 AM - 4:30 AM ET"
+  // Time can be "4AM", "4:25AM", "4:25 AM" — separator can be hyphen or en dash
   return text.replace(
-    /(\w+ \d{1,2}),?\s+(\d{1,2}:\d{2}\s*(?:AM|PM))(?:\s*-\s*(\d{1,2}:\d{2}\s*(?:AM|PM)))?\s+ET\b/gi,
+    /(\w+ \d{1,2}),?\s+(\d{1,2}(?::\d{2})?\s*(?:AM|PM))(?:\s*[\u2013\u2014-]\s*(\d{1,2}(?::\d{2})?\s*(?:AM|PM)))?\s+ET\b/gi,
     (match, datePart, time1, time2) => {
       try {
         const year = new Date().getFullYear();
-        // Normalize "3:50AM" → "3:50 AM" (Date() requires the space)
-        const normTime = (t) => t.replace(/(\d)(AM|PM)/i, '$1 $2');
+        // Normalize "3:50AM" → "3:50 AM", "4AM" → "4:00 AM" (Date() requires space + minutes)
+        const normTime = (t) => {
+          let s = t.replace(/(\d)\s*(AM|PM)/i, '$1 $2');
+          if (!s.includes(':')) s = s.replace(/^(\d+)/, '$1:00');
+          return s;
+        };
         const parseET = (dateStr, timeStr) => {
           const ts = normTime(timeStr);
           let etDate = new Date(`${dateStr}, ${year} ${ts} EDT`);
@@ -38,7 +43,7 @@ function convertETtoLocal(text) {
         if (time2) {
           const d2 = parseET(datePart, time2);
           if (!d2) return match;
-          return `${fmtDate(d1)}, ${fmtTime(d1)}-${fmtTime(d2)} ${tzAbbr}`;
+          return `${fmtDate(d1)}, ${fmtTime(d1)}\u2013${fmtTime(d2)} ${tzAbbr}`;
         }
         return `${fmtDate(d1)}, ${fmtTime(d1)} ${tzAbbr}`;
       } catch (e) {
