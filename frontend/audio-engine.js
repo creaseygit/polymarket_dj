@@ -34,7 +34,7 @@ const audioEngine = (() => {
       prebake: async () => {
         await Promise.all([
           samples(`${CDN}/piano.json`, `${CDN}/piano/`, { prebake: true }),
-          samples('github:tidalcycles/dirt-samples'),
+          samples(`${CDN}/Dirt-Samples/strudel.json`, `${CDN}/Dirt-Samples/`, { prebake: true }),
           // VCSL instrument samples (orchestral percussion, etc.)
           samples(`${CDN}/vcsl.json`, `${CDN}/VCSL/`, { prebake: true }),
           // Tidal drum machines (Roland TR-808 etc.)
