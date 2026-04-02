@@ -109,7 +109,7 @@ const audioEngine = (() => {
         // GM soundfonts — warm up the soundfont loader
         note("c2 e2 a2").sound("gm_acoustic_bass"),
         note("c4").sound("gm_epiano1"),
-        note("c5").sound("gm_vibraphone"),
+        note("c5").sound("gm_vibraphone").n(4),
       ).gain(0.001).play();
       // Wait for fetches to complete — CDN samples take 2-4s
       await new Promise(r => setTimeout(r, 5000));
