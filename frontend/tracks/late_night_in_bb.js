@@ -390,26 +390,6 @@ const jazzTrioTrack = (() => {
   // VOICE CODE GENERATORS
   // ════════════════════════════════════════════════════════════
 
-  // Pad — sustained ambient chords (first layer to appear)
-  function padCode(energy, volatility, gainMul) {
-    const g = (0.12 * energy * gainMul).toFixed(3);
-    const room = (0.35 + volatility * 0.3).toFixed(2);
-    return `
-$: chord(changes)
-  .dict("ireal")
-  .voicing()
-  .s("triangle")
-  .attack(0.8)
-  .release(3)
-  .sustain(0.5)
-  .gain(${g})
-  .lpf(${Math.round(800 + energy * 600)})
-  .room(${room})
-  .roomsize(5)
-  .orbit(1);
-`;
-  }
-
   // Comp — rhythmic piano stabs
   function compCode(intBand, energy, volatility, gainMul) {
     let struct, vel, velMax;
@@ -618,13 +598,12 @@ $: s("<~ ~ ~ ~ ~ ~ ~ [~ ~ [sd ~] [~ ~ sd]]>").gain(${(0.22 * energy * gainMul).t
   // ── Track object ──
 
   return {
-    name: "jazz_trio",
+    name: "late_night_in_bb",
     label: "Late Night in Bb",
     category: "music",
     cpm: 30,
 
     voices: {
-      pad:        { label: "Pad",         default: 1.0 },
       comp:       { label: "Comping",     default: 1.0 },
       bass:       { label: "Bass",        default: 1.0 },
       melody:     { label: "Melody",      default: 1.0 },
@@ -708,12 +687,7 @@ $: s("<~ ~ ~ ~ ~ ~ ~ [~ ~ [sd ~] [~ ~ sd]]>").gain(${(0.22 * energy * gainMul).t
       let code = "setcpm(30);\n";
       code += `let changes = "${changes}";\n`;
 
-      // 1. Pad — sustained ambient chords (heat > 0.05)
-      code += hQ > 0.05
-        ? padCode(energy, volQ, this.getGain('pad'))
-        : '\n$: silence;\n';
-
-      // 2. Comp — rhythmic piano stabs (heat > 0.20)
+      // 1. Comp — rhythmic piano stabs (heat > 0.20)
       code += hQ > 0.20
         ? compCode(intBand, energy, volQ, this.getGain('comp'))
         : '\n$: silence;\n';
@@ -783,4 +757,4 @@ $: s("<~ ~ ~ ~ ~ ~ ~ [~ ~ [sd ~] [~ ~ sd]]>").gain(${(0.22 * energy * gainMul).t
   };
 })();
 
-audioEngine.registerTrack("jazz_trio", jazzTrioTrack);
+audioEngine.registerTrack("late_night_in_bb", jazzTrioTrack);

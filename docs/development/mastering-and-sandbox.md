@@ -1,6 +1,6 @@
 # Mastering & Sandbox — Design Spec
 
-> **Status: Implemented.** All phases complete. Both pages are live at `/master` and `/sandbox`. Music tracks (`jazz_trio`, `poolside_house`) are migrated to the voice gain system. This document is the original design spec retained for reference.
+> **Status: Implemented.** All phases complete. Both pages are live at `/master` and `/sandbox`. Music tracks (`late_night_in_bb`, `poolside_house`) are migrated to the voice gain system. This document is the original design spec retained for reference.
 
 Two pages for tuning tracks and exploring their dynamic range.
 
@@ -289,7 +289,7 @@ The sandbox page also includes per-voice gain sliders (same as mastering). This 
 {
   "format": "dam.fm/mastering",
   "version": 1,
-  "track": "jazz_trio",
+  "track": "late_night_in_bb",
   "timestamp": "2026-04-01T12:34:56Z",
   "voices": {
     "bass": 0.85,
@@ -330,14 +330,14 @@ This is a manual step for now (edit the `.js` file). A future PR-creation flow c
 
 ### What changes for existing tracks
 
-All existing music tracks (`jazz_trio`, `poolside_house`) need to:
+All existing music tracks (`late_night_in_bb`, `poolside_house`) need to:
 
 1. **Add `voices` object** — declare every independently-controllable voice
 2. **Add `gains` object** — empty `{}`, populated at runtime by mastering page
 3. **Add `getGain()` method** — standard helper (same on every track)
 4. **Multiply `.gain()` values by `getGain()`** in each voice code generator
 
-### Example migration (jazz_trio bass voice)
+### Example migration (late_night_in_bb bass voice)
 
 **Before:**
 ```javascript
@@ -389,7 +389,7 @@ All phases are complete:
 | Phase | Scope | Status |
 | ----- | ----- | ------ |
 | **1** | Track spec update: `voices`, `gains`, `getGain()`. `_template.js` created. | Done |
-| **2** | Migrate `jazz_trio` (9 voices) and `poolside_house` (7 voices) to voice spec. | Done |
+| **2** | Migrate `late_night_in_bb` (8 voices) and `poolside_house` (7 voices) to voice spec. | Done |
 | **3** | Build `/master` page (voice sliders, solo/mute, JSON export/import). | Done |
 | **4** | Build `/sandbox` page (data simulation, presets, sweeps, event triggers). | Done |
 | **5** | Cross-page navigation between main, mastering, and sandbox. | Done |
