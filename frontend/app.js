@@ -8,6 +8,49 @@ let currentMarketSlug = null;
 let currentEventSlug = null;
 let audioRunning = false;
 
+// ── ET → local time conversion for market names ──
+function convertETtoLocal(text) {
+  // Match patterns like "April 2, 3:50AM-3:55AM ET" or "January 15, 12:00PM ET"
+  return text.replace(
+    /(\w+ \d{1,2}),?\s+(\d{1,2}:\d{2}(?:AM|PM))(?:\s*-\s*(\d{1,2}:\d{2}(?:AM|PM)))?\s+ET\b/gi,
+    (match, datePart, time1, time2) => {
+      try {
+        const year = new Date().getFullYear();
+        const parseET = (dateStr, timeStr) => {
+          // Parse "April 2" + "3:50AM" in America/New_York
+          const dt = new Date(`${dateStr}, ${year} ${timeStr}`);
+          if (isNaN(dt)) return null;
+          // Construct a date explicitly in ET
+          const etStr = `${dateStr}, ${year} ${timeStr} EDT`;
+          let etDate = new Date(etStr);
+          // Fallback: try EST if EDT fails
+          if (isNaN(etDate)) etDate = new Date(`${dateStr}, ${year} ${timeStr} EST`);
+          if (isNaN(etDate)) return null;
+          return etDate;
+        };
+        const fmtTime = (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        const fmtDate = (d) => d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+
+        const d1 = parseET(datePart, time1);
+        if (!d1) return match;
+
+        const localTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const tzAbbr = localTZ === 'America/New_York' ? 'ET'
+          : d1.toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop();
+
+        if (time2) {
+          const d2 = parseET(datePart, time2);
+          if (!d2) return match;
+          return `${fmtDate(d1)}, ${fmtTime(d1)}-${fmtTime(d2)} ${tzAbbr}`;
+        }
+        return `${fmtDate(d1)}, ${fmtTime(d1)} ${tzAbbr}`;
+      } catch (e) {
+        return match; // On any error, return original text
+      }
+    }
+  );
+}
+
 // ── Live finance detection ──
 const _LIVE_SLUG_RE = /^(btc|eth)-updown-\d+m-\d+$|^bitcoin-up-or-down-.+-et$/;
 
@@ -291,7 +334,7 @@ function renderBrowse(markets) {
       : '<button class="browse-play-btn" onclick="playBrowseMarket(\'' + slug + '\',\'' + q + '\',\'' + es + '\')">Play</button>';
     return '<div class="' + cls + '">'
       + '<div class="browse-body">'
-      + '<div class="browse-question">' + esc((m.question || '').substring(0, 65)) + '</div>'
+      + '<div class="browse-question">' + esc(convertETtoLocal((m.question || '').substring(0, 65))) + '</div>'
       + '<div class="browse-meta">' + esc(vol) + '</div>'
       + '</div>'
       + (pricePct ? '<div class="browse-price">' + esc(pricePct) + '</div>' : '')
@@ -411,7 +454,7 @@ function onWsMarketInfo(market) {
   currentEventSlug = market.event_slug || null;
   updateHash();
   updateAudioUI();
-  document.getElementById('np-question').textContent = market.question;
+  document.getElementById('np-question').textContent = convertETtoLocal(market.question);
   const npLink = document.getElementById('np-link');
   if (market.link) {
     npLink.href = market.link;
@@ -420,7 +463,7 @@ function onWsMarketInfo(market) {
     npLink.style.display = 'none';
   }
   document.getElementById('url-status').textContent = '';
-  log('Now playing: ' + market.question);
+  log('Now playing: ' + convertETtoLocal(market.question));
   if (activeTab && browseCache[activeTab]) renderBrowse(browseCache[activeTab]);
 }
 

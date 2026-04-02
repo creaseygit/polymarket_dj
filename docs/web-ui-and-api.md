@@ -5,7 +5,7 @@
 The UI has four sections:
 
 1. **Audio** — Single Play/Stop toggle (hidden until a market is selected; auto-starts on market pick), track selector, volume slider (client-side), sensitivity slider (server-side), connection status
-2. **Now Playing** — Current market question, bullish/bearish + price %, raw data values (heat, velocity, trade rate, spread), link to market
+2. **Now Playing** — Current market question (ET times converted to user's local timezone), bullish/bearish + price %, raw data values (heat, velocity, trade rate, spread), link to market
 3. **Connection** — WebSocket connection status (auto-reconnects)
 4. **Data Source** — URL paste input, Browse tabs (Trending, Crypto Live, Politics, Sports, Crypto, Finance, Culture, Geopolitics, Tech, Closing Soon)
 
