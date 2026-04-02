@@ -84,8 +84,10 @@ const audioEngine = (() => {
         // Drums
         sound("bd:0 bd:1 bd:3"),
         sound("sd:0 sd:1"),
-        sound("hh:0 hh:2 hh:6 hh:8"),
+        sound("hh:0 hh:1 hh:2 hh:3 hh:6 hh:8"),
         sound("cb:0"),
+        sound("cp:0"),
+        sound("oh:0 oh:3"),
         // Ride cymbals (Dirt-Samples cr + tidal-drum-machines rd)
         sound("cr:0 cr:1 cr:2 cr:3"),
         sound("rd"),
@@ -93,8 +95,10 @@ const audioEngine = (() => {
         // Piano — one sample per ~3 semitones, cover C3-C6 range
         // (Salamander Grand Piano loads a separate .wav per pitch zone)
         note("c3 e3 a3 c4 e4 a4 c5 e5 a5 c6").sound("piano"),
-        // GM soundfont acoustic bass — warm up the soundfont loader
+        // GM soundfonts — warm up the soundfont loader
         note("c2 e2 a2").sound("gm_acoustic_bass"),
+        note("c4").sound("gm_epiano1"),
+        note("c5").sound("gm_vibraphone"),
       ).gain(0).play();
       // Wait for fetches to complete — CDN samples take 2-4s
       await new Promise(r => setTimeout(r, 5000));
