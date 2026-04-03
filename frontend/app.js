@@ -399,12 +399,18 @@ function updateAudioUI() {
 // Loads track JS files reported by the server, so adding a new .js file
 // to frontend/tracks/ is all that's needed — no index.html changes.
 let _tracksLoaded = false;
-function loadTrackScripts(tracks) {
-  if (_tracksLoaded) return Promise.resolve();
+function loadTrackScripts(tracks, { reload = false } = {}) {
+  if (_tracksLoaded && !reload) return Promise.resolve();
   _tracksLoaded = true;
+  const bust = reload ? `?v=${Date.now()}` : '';
   return Promise.all(tracks.map(t => new Promise((resolve, reject) => {
+    if (reload) {
+      // Remove old script tag so the browser fetches fresh code
+      const old = document.querySelector(`script[src^="/static/tracks/${t.name}.js"]`);
+      if (old) old.remove();
+    }
     const s = document.createElement('script');
-    s.src = `/static/tracks/${t.name}.js`;
+    s.src = `/static/tracks/${t.name}.js${bust}`;
     s.onload = resolve;
     s.onerror = () => { console.warn('[Tracks] Failed to load:', t.name); resolve(); };
     document.head.appendChild(s);
@@ -414,23 +420,29 @@ function loadTrackScripts(tracks) {
 async function onWsStatus(data) {
   // Dynamically load track scripts from the server's discovered list
   const sel = document.getElementById('track-select');
-  if (sel.options.length === 0 && data.tracks) {
-    await loadTrackScripts(data.tracks);
+  const firstLoad = sel.options.length === 0;
+  if (data.tracks) {
+    if (firstLoad) {
+      await loadTrackScripts(data.tracks);
 
-    const groups = {};
-    data.tracks.forEach(t => {
-      const cat = t.category || 'music';
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat].push(t);
-    });
-    const order = [['music', 'Music'], ['alert', 'Alerts'], ['diagnostic', 'Diagnostic']];
-    order.forEach(([key, label]) => {
-      if (!groups[key]) return;
-      const og = document.createElement('optgroup');
-      og.label = label;
-      groups[key].forEach(t => og.appendChild(new Option(t.label, t.name)));
-      sel.add(og);
-    });
+      const groups = {};
+      data.tracks.forEach(t => {
+        const cat = t.category || 'music';
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push(t);
+      });
+      const order = [['music', 'Music'], ['alert', 'Alerts'], ['diagnostic', 'Diagnostic']];
+      order.forEach(([key, label]) => {
+        if (!groups[key]) return;
+        const og = document.createElement('optgroup');
+        og.label = label;
+        groups[key].forEach(t => og.appendChild(new Option(t.label, t.name)));
+        sel.add(og);
+      });
+    } else {
+      // Reconnect — re-fetch track scripts in case they were updated
+      await loadTrackScripts(data.tracks, { reload: true });
+    }
   }
   // Init browse tabs
   if (data.categories) {
