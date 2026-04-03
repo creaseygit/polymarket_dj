@@ -2,6 +2,10 @@
 
 This reference provides genre-specific techniques and data-mapping strategies. Each genre includes sonic characteristics, Strudel implementation patterns, and suggestions for connecting market data signals to musical parameters.
 
+## External Reference
+
+[strudel-mcp-server](https://github.com/williamzujkowski/strudel-mcp-server) — MCP server for Strudel with 66 tools (pattern generation, music theory, audio analysis). Has basic genre example patterns in `patterns/examples/` (JSON format with BPM/key/code). Patterns are simple templates — our tracks are more sophisticated — but the genre metadata and README genre characteristics summaries can be useful starting points.
+
 ## How to Use This Reference
 
 1. Identify the user's genre/artist request
