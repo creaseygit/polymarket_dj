@@ -101,9 +101,9 @@ The `pattern(data)` or `evaluateCode(data)` method receives these values every 3
 
   // ── Price & direction ──
   price: 0.0-1.0,        // Current market price (0=No, 1=Yes)
-  price_move: -1.0-1.0,  // "Is price moving RIGHT NOW?" — only non-zero during active moves (30s window)
+  price_move: -1.0-1.0,  // "Is price moving RIGHT NOW?" — edge-detected (30s window) + slow drift (1.5¢+)
   momentum: -1.0-1.0,    // "What's the trend?" — positive=uptrend, negative=downtrend (sensitivity-scaled window)
-  velocity: 0.0-1.0,     // Speed of price change (unsigned)
+  velocity: 0.0-1.0,     // Speed of price change (unsigned, 5-min, absolute: 10¢=1.0)
 
   // ── Character ──
   volatility: 0.0-1.0,   // Market uncertainty — high=erratic bouncing, low=calm
@@ -151,6 +151,7 @@ The `onEvent(type, msg, data)` method handles one-shot events. Return type depen
 | `spike` | `magnitude: 0.0–1.0` | Heat spike — magnitude tells you how big (small threshold breach vs huge jump) |
 | `price_move` | `direction: 1\|-1`, `magnitude: 0.0–1.0` | Significant price change — direction + size |
 | `resolved` | `result: 1\|-1` | Market resolved (1=Yes won, -1=No won) |
+| `whale` | `direction: 1\|-1`, `magnitude: 0.0–1.0`, `size: float` | Large trade (≥3x rolling median). Magnitude: 3x=0.33, 9x+=1.0 |
 
 Use `msg.magnitude` to scale your response — a tiny spike and a massive spike can sound different:
 

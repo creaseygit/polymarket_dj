@@ -417,9 +417,9 @@ Every 3 seconds, `evaluateCode(data)` receives:
 |--------|-------|-------------|---------------|
 | `heat` | 0–1 | **Energy** | Volume, layer count, rhythmic density, arrangement fullness |
 | `price` | 0–1 | **Harmonic position** | Register, note choice. 0.5 = max tension. 0.9+ = resolution. <0.2 = doom |
-| `price_move` | -1–1 | **Phrase trigger** | Melodic runs, arpeggios, fills. Only non-zero during active movement (30s window). Momentary gestures. |
+| `price_move` | -1–1 | **Phrase trigger** | Melodic runs, arpeggios, fills. Fires on 30s edge-detected movement AND slow drift (1.5¢+, graduated magnitude). Momentary gestures. |
 | `momentum` | -1–1 | **Section mood** | Build energy on uptrend, pull back on downtrend. Sustained — works for section-level decisions. |
-| `velocity` | 0–1 | **Pace** | Subdivision, tempo feel, rhythmic urgency |
+| `velocity` | 0–1 | **Pace** | Subdivision, tempo feel, rhythmic urgency. 5-min window, absolute: 10¢ move = 1.0 |
 | `volatility` | 0–1 | **Tension/uncertainty** | Dissonance, detuning, filter wobble, tremolo, irregular rhythms |
 | `trade_rate` | 0–1 | **Complexity** | Drum density, voice count, melodic ornamentation |
 | `spread` | 0–1 | **Liquidity feel** | Wide intervals vs tight clusters, consonance vs dissonance |
@@ -450,6 +450,7 @@ Every 3 seconds, `evaluateCode(data)` receives:
 | `spike` | `magnitude: 0–1` | Crash, accent, dramatic hit. Scale intensity with magnitude. |
 | `price_move` | `direction: 1\|-1`, `magnitude: 0–1` | Melodic run, arpeggio, fill. Direction = up/down. |
 | `resolved` | `result: 1\|-1` | Finale. Market answered the question. 1 = Yes won, -1 = No won. |
+| `whale` | `direction: 1\|-1`, `magnitude: 0–1`, `size: float` | Large trade (≥3x rolling median). Magnitude: 3x=0.33, 6x=0.67, 9x+=1.0. `size` is raw USDC amount. |
 
 ---
 
@@ -479,7 +480,7 @@ Design your signal routing before writing code. **Every layer must have a condit
 | Melody | `\|momentum\| > 0.2` or `heat > 0.5` | **`momentum` (contour direction)**, `tone` (scale), `intBand` (density), `volatility` (fragmentation) | Must use generative techniques (see Design Principles §2) |
 | Pad | `heat > 0.1` | `tone`, `heat` (gain), `volatility` (reverb/detuning), **`momentum` (voicing direction)** | Last layer standing |
 | Texture | `volatility > 0.3` | `volatility` (gain), `spread` (filter) | Calm markets |
-| Events | On trigger | `spike` (magnitude), `price_move` (direction + magnitude) | Always conditional |
+| Events | On trigger | `spike` (magnitude), `price_move` (direction + magnitude), `whale` (large trade) | Always conditional |
 
 **The goal**: at minimum data values, only the faintest pad (or nothing) is audible. At maximum, every layer is active and rich.
 

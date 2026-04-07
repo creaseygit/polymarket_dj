@@ -23,9 +23,9 @@
 // ── DATA SIGNALS (see docs/data-interface.md for full details) ──
 // heat        0.0–1.0   Overall market activity
 // price       0.0–1.0   Current price
-// price_move -1.0–1.0   Active price change (edge-detected, 30s window)
+// price_move -1.0–1.0   Active price change (edge-detected 30s window + slow drift 1.5¢+)
 // momentum   -1.0–1.0   Sustained trend direction (sensitivity-scaled window)
-// velocity    0.0–1.0   Price velocity magnitude (unsigned)
+// velocity    0.0–1.0   Price velocity magnitude (unsigned, 5-min, absolute: 10¢=1.0)
 // trade_rate  0.0–1.0   Trades per minute (normalized)
 // spread      0.0–1.0   Bid-ask spread (normalized)
 // volatility  0.0–1.0   Price oscillation / uncertainty
@@ -173,11 +173,16 @@ const myTrack = (() => {
 
     // ── Events ──
     // Return a code string for evaluate-mode, or null to ignore.
-    // Common events: "spike", "price_move", "resolved"
+    // Common events: "spike", "price_move", "resolved", "whale"
     onEvent(type, msg, data) {
       if (type === "spike") {
         const gain = (0.04 + (msg.magnitude || 0.5) * 0.04).toFixed(3);
         return `$: s("<cr:0 ~ ~ ~>").gain(${gain}).room(0.4).orbit(5);`;
+      }
+      if (type === "whale") {
+        // Large trade detected (≥3x median). magnitude: 3x=0.33, 9x+=1.0
+        const gain = (0.06 + (msg.magnitude || 0.5) * 0.06).toFixed(3);
+        return `$: s("<cr:2 ~ ~ ~>").gain(${gain}).room(0.5).rsize(4).orbit(5);`;
       }
       return null;
     },
