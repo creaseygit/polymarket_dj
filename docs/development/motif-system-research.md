@@ -116,10 +116,22 @@ Changes made:
 - 8-bar cycling means the melody won't repeat for 24 seconds (8 bars × 3s per bar) — much more variation than the old 1-bar loop
 - The `<>` operator means Strudel manages the cycling deterministically — stable across rebuilds
 
-## Track: Late Night in Bb (next)
+## Track: Late Night in Bb (IMPLEMENTED)
 
-Will adapt after Digging prototype is validated.
-Changes needed:
-- Replace `BB_MELODY_UP/DOWN/FLAT` and `GM_MELODY_UP/DOWN/FLAT` tables
-- Map the seed motif into diatonic Bb major / G minor degrees
-- Adjust `BB_BASS_UP/DOWN/FLAT` and `GM_BASS_UP/DOWN/FLAT` to coordinate
+Changes made:
+- Replaced all 18 melody arrays (BB/GM × UP/DOWN/FLAT × 3 intBands) with 9 motif constants
+- Switched from explicit note names to `.scale("Bb4:major")` / `.scale("G4:minor")` with degrees
+- Same seed motif `[0,1,2,4]` as Digging — shared melodic DNA across both tracks
+- Jazz phrasing via `@` weights in low-magnitude patterns (held notes, ballad feel)
+- `melodyCode()` now selects scale from tone, pattern from direction × magnitude
+- `onEvent` price_move uses seed motif via `.scale()` too
+- IntBand embellishment: octave reinforcement at high intensity (7 degrees = diatonic octave)
+- Bass patterns unchanged — still use explicit note names with melodicBand selection
+- Net reduction: 154 insertions, 172 deletions (simpler code)
+
+### Key difference from Digging
+- Quarter-note phrasing (4 events/bar) vs Digging's sixteenth-note feel (16 events/bar)
+- `@2` and `@3` weights in low-magnitude patterns for held jazz notes
+- Diatonic scale (7 notes/octave) vs pentatonic (5 notes/octave)
+- Degree 4 leap = perfect 5th (diatonic) vs major 6th (pentatonic)
+- Octave embellishment uses `note(7)` (diatonic octave) vs `note(5)` (pentatonic octave)

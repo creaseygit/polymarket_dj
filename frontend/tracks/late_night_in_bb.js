@@ -220,171 +220,130 @@ const jazzTrioTrack = (() => {
 >`;
 
   // ════════════════════════════════════════════════════════════
-  // MELODY PATTERNS — same structure as bass
-  // Direction from momentum, range from melodicBand
+  // MELODY MOTIF SYSTEM
   // ════════════════════════════════════════════════════════════
+  //
+  // Same seed motif as Digging in the Markets: [0,1,2,4] = "do re mi sol"
+  // Applied via .scale() — Bb4:major (bullish) or G4:minor (bearish)
+  //
+  // Jazz phrasing: quarter-note feel with @weights for held notes.
+  // 8-bar phrases via <> cycling. Bars 1 & 8 = core motif anchor.
+  // Bars 2-7 = variations. "Depart and return."
 
-  // Bb major — ascending melody
-  const BB_MELODY_UP = [
-    // intBand 0: sparse ascending hints
-    `<
-  [C5@2 D5 ~]
-  [A4@3 ~]
-  [Bb4 ~ D5@2]
-  [Eb5@2 G4@2]
-  [C5@2 Eb5 ~]
-  [A4 ~ C5@2]
-  [D5@2 Bb4@2]
-  [Bb4@2 C5@2]
->`,
-    // intBand 1: quarter-note ascending climbs
-    `<
-  [Bb4 C5 D5 Eb5]
-  [A4 C5 Eb5 ~]
-  [Bb4 ~ D5 F5]
-  [Eb4 G4 Bb4 ~]
-  [C5 D5 Eb5 G5]
-  [F4 A4 C5 Eb5]
-  [Bb4 D5 F5 ~]
-  [Bb4 C5 D5 F5]
->`,
-    // intBand 2: eighth-note ascending runs
-    `<
-  [Bb4 C5 [Db5 D5] Eb5]
-  [A4 [Bb4 C5] Eb5 ~]
-  [[Bb4 C5] D5 [Eb5 F5] ~]
-  [Eb4 [F4 G4] Bb4 ~]
-  [C5 [D5 Eb5] G5 F5]
-  [[F4 G4] A4 C5 Eb5]
-  [Bb4 [C5 D5] F5 D5]
-  [[Bb4 D5] [C5 Eb5] F5 D5]
->`,
-  ];
+  // ── Rising phrases (momentum > 0) ──
 
-  // Bb major — descending melody
-  const BB_MELODY_DOWN = [
-    // intBand 0: sparse descending
-    `<
-  [G5@2 Eb5 ~]
-  [C5@2 A4@2]
-  [F5@2 D5 ~]
-  [Bb4@2 ~ G4]
-  [Eb5@2 C5 ~]
-  [A4@2 F4@2]
-  [D5@2 Bb4@2]
-  [Bb4@2 A4@2]
->`,
-    // intBand 1: quarter-note descending phrases
-    `<
-  [G5 Eb5 C5 Bb4]
-  [C5 A4 F4 ~]
-  [F5 D5 Bb4 A4]
-  [Bb4 G4 Eb4 ~]
-  [Eb5 C5 Bb4 G4]
-  [A4 F4 Eb4 C4]
-  [D5 Bb4 A4 F4]
-  [Bb4 A4 G4 F4]
->`,
-    // intBand 2: eighth-note descending runs
-    `<
-  [G5 [F5 Eb5] C5 Bb4]
-  [[C5 Bb4] A4 F4 ~]
-  [F5 [Eb5 D5] Bb4 A4]
-  [[Bb4 Ab4] G4 Eb4 D4]
-  [Eb5 [D5 C5] Bb4 G4]
-  [[A4 G4] F4 Eb4 C4]
-  [D5 [C5 Bb4] A4 F4]
-  [[Bb4 A4] [G4 F4] Eb4 D4]
->`,
-  ];
+  // Low magnitude — sparse, held notes, jazz ballad feel
+  const MOTIF_RISE_LOW = `<
+    [0@2 1 2]
+    [~@2 2 ~]
+    [1@2 2 3]
+    [~@2 ~ ~]
+    [0@2 1 ~]
+    [~@2 2 1]
+    [2 1 0 ~]
+    [0 1 2 4]
+  >`;
 
-  // Bb major — flat melody (meandering, no clear direction)
-  const BB_MELODY_FLAT = [
-    `<[Bb4@2 ~ ~] [A4@3 ~] [D5@2 Bb4@2] [G4@3 ~] [C5@2 ~ ~] [~ A4@2 ~] [Bb4@3 ~] [Bb4@2 ~ ~]>`,
-    `<[C5 ~ Bb4 ~] [A4 ~ C5 ~] [D5 ~ Bb4 ~] [Eb5 ~ G4 ~] [C5 ~ Eb5 ~] [A4 ~ F4 ~] [Bb4 ~ D5 ~] [Bb4 ~ A4 ~]>`,
-    `<[[C5|Eb5] ~ [D5|Bb4] ~] [A4 [C5|Bb4] ~ ~] [[Bb4|D5] ~ [F5|Bb4] ~] [[Eb5|G4] ~ ~ ~] [[C5|Bb4] ~ [Eb5|D5] ~] [~ [A4|C5] ~ ~] [[D5|Bb4] ~ [C5|A4] ~] [[Bb4|D5] ~ ~ ~]>`,
-  ];
+  // Medium magnitude — clear climb, all bars active
+  const MOTIF_RISE_MED = `<
+    [0 1 2 4]
+    [2 1 2 ~]
+    [1 2 3 5]
+    [3 2 1 2]
+    [0 1 2 ~]
+    [1 3 2 4]
+    [4 2 1 ~]
+    [0 1 2 4]
+  >`;
 
-  // G minor — ascending melody
-  const GM_MELODY_UP = [
-    // intBand 0: sparse ascending
-    `<
-  [A4@2 C5 ~]
-  [D4@2 F#4@2]
-  [G4 ~ Bb4@2]
-  [C4@2 Eb4@2]
-  [A4@2 Eb5 ~]
-  [D4 ~ F#4@2]
-  [G4@2 Bb4@2]
-  [Bb4@2 D5@2]
->`,
-    // intBand 1: quarter-note ascending phrases
-    `<
-  [A4 C5 Eb5 G5]
-  [D4 F#4 A4 ~]
-  [G4 Bb4 D5 F5]
-  [C4 Eb4 G4 Bb4]
-  [A4 Eb5 G5 A5]
-  [F#4 A4 C5 D5]
-  [G4 Bb4 D5 ~]
-  [Bb4 C5 D5 G5]
->`,
-    // intBand 2: eighth-note ascending runs
-    `<
-  [A4 [Bb4 C5] Eb5 G5]
-  [D4 [Eb4 F#4] A4 ~]
-  [[G4 A4] Bb4 [C5 D5] F5]
-  [C4 [D4 Eb4] G4 Bb4]
-  [A4 [C5 Eb5] G5 [F5 A5]]
-  [[F#4 G4] A4 C5 [D5 Eb5]]
-  [G4 [A4 Bb4] [C5 D5] F5]
-  [[Bb4 C5] [D5 Eb5] F5 G5]
->`,
-  ];
+  // High magnitude — sweeping sequence, relentless
+  const MOTIF_RISE_HIGH = `<
+    [0 1 2 4]
+    [1 2 3 5]
+    [2 3 4 6]
+    [4 3 4 5]
+    [3 4 5 7]
+    [5 4 5 6]
+    [6 4 2 ~]
+    [0 1 2 4]
+  >`;
 
-  // G minor — descending melody
-  const GM_MELODY_DOWN = [
-    // intBand 0: sparse descending
-    `<
-  [G5@2 Eb5 ~]
-  [F#4@3 ~]
-  [D5@2 Bb4@2]
-  [C5@2 ~ G4]
-  [Eb5@2 C5 ~]
-  [A4@2 F#4@2]
-  [Bb4@3 ~]
-  [D5@2 Bb4@2]
->`,
-    // intBand 1: quarter-note descending phrases
-    `<
-  [G5 Eb5 C5 A4]
-  [C5 A4 F#4 ~]
-  [D5 Bb4 G4 ~]
-  [C5 Bb4 G4 Eb4]
-  [Eb5 C5 A4 G4]
-  [A4 F#4 D4@2]
-  [Bb4 A4 G4 F4]
-  [D5 Bb4 A4 G4]
->`,
-    // intBand 2: eighth-note descending runs
-    `<
-  [G5 [F5 Eb5] C5 A4]
-  [[C5 Bb4] A4 F#4 ~]
-  [D5 [C5 Bb4] G4 F4]
-  [C5 [Bb4 Ab4] G4 Eb4]
-  [[Eb5 Db5] C5 [Bb4 A4] G4]
-  [A4 [Ab4 F#4] D4 ~]
-  [[Bb4 A4] G4 [F4 Eb4] D4]
-  [D5 [C5 Bb4] [A4 G4] F4]
->`,
-  ];
+  // ── Falling phrases (momentum < 0) ──
 
-  // G minor — flat melody (meandering)
-  const GM_MELODY_FLAT = [
-    `<[G4@2 ~ A4] [F#4@3 ~] [Bb4@2 G4@2] [C5@3 ~] [A4@2 G4@2] [~ F#4@2 ~] [G4@3 ~] [G4@2 ~ ~]>`,
-    `<[G4 ~ A4 ~] [F#4 ~ D4 ~] [G4 ~ Bb4 ~] [C5 ~ G4 ~] [A4 ~ Eb4 ~] [F#4 ~ A4 ~] [G4 ~ D5 ~] [Bb4 ~ G4 ~]>`,
-    `<[[G4|Bb4] ~ [A4|G4] ~] [F#4 [A4|D4] ~ ~] [[G4|Bb4] ~ [D5|G4] ~] [[C5|Eb4] ~ ~ ~] [[A4|G4] ~ [Eb5|C5] ~] [~ [F#4|A4] ~ ~] [[Bb4|G4] ~ [A4|F4] ~] [[G4|Bb4] ~ ~ ~]>`,
-  ];
+  // Low magnitude — sparse, tentative descent
+  const MOTIF_FALL_LOW = `<
+    [4@2 3 2]
+    [~@2 2 ~]
+    [3@2 2 1]
+    [~@2 ~ ~]
+    [4@2 3 ~]
+    [~@2 1 2]
+    [1 2 3 ~]
+    [4 2 1 0]
+  >`;
+
+  // Medium magnitude — clear descent with development
+  const MOTIF_FALL_MED = `<
+    [4 2 1 0]
+    [1 2 1 ~]
+    [3 1 0 1]
+    [0 1 2 1]
+    [4 3 2 ~]
+    [3 1 2 0]
+    [0 1 2 ~]
+    [4 2 1 0]
+  >`;
+
+  // High magnitude — sweeping descent
+  const MOTIF_FALL_HIGH = `<
+    [7 5 4 2]
+    [6 4 3 1]
+    [5 3 2 0]
+    [2 3 2 1]
+    [4 2 1 0]
+    [1 2 1 0]
+    [0 2 3 ~]
+    [4 2 1 0]
+  >`;
+
+  // ── Flat phrases (momentum ≈ 0) ──
+  // Fragments that never complete — indecisive, never leaps to degree 4
+
+  // Low magnitude — very sparse, jazz ballad meandering
+  const MOTIF_FLAT_LOW = `<
+    [0@2 1 2]
+    [~@3 ~]
+    [2@2 1 0]
+    [~@3 ~]
+    [1@2 2 1]
+    [~@3 ~]
+    [2 1 0 ~]
+    [0@2 1 2]
+  >`;
+
+  // Medium magnitude — more present but still oscillating
+  const MOTIF_FLAT_MED = `<
+    [0 1 2 1]
+    [2 3 2 1]
+    [1 2 1 0]
+    [2 1 2 3]
+    [0 1 2 1]
+    [3 2 1 2]
+    [1 0 1 2]
+    [2 1 0 ~]
+  >`;
+
+  // High magnitude — busy but going nowhere
+  const MOTIF_FLAT_HIGH = `<
+    [0 1 2 3]
+    [2 1 0 1]
+    [2 3 2 1]
+    [3 2 1 0]
+    [1 2 3 2]
+    [3 2 1 0]
+    [1 2 3 2]
+    [2 1 0 ~]
+  >`;
 
   // ════════════════════════════════════════════════════════════
   // VOICE CODE GENERATORS
@@ -475,16 +434,42 @@ $: note(\`${bassNotes}\`)
 `;
   }
 
-  // Melody — piano melody following momentum direction
-  function melodyCode(melodyNotes, melodyStrength, energy, volatility, gainMul) {
+  // Melody — motif-based piano melody via .scale()
+  function melodyCode(tone, momSign, momMagQ, melodyStrength, energy, volatility, intBand, gainMul) {
+    const scale = tone === 1 ? "Bb4:major" : "G4:minor";
+
+    // Select phrase set: direction × magnitude
+    let melodyPattern;
+    if (momSign > 0) {
+      melodyPattern = momMagQ >= 0.55 ? MOTIF_RISE_HIGH
+                    : momMagQ >= 0.25 ? MOTIF_RISE_MED
+                    : MOTIF_RISE_LOW;
+    } else if (momSign < 0) {
+      melodyPattern = momMagQ >= 0.55 ? MOTIF_FALL_HIGH
+                    : momMagQ >= 0.25 ? MOTIF_FALL_MED
+                    : MOTIF_FALL_LOW;
+    } else {
+      melodyPattern = momMagQ >= 0.55 ? MOTIF_FLAT_HIGH
+                    : momMagQ >= 0.25 ? MOTIF_FLAT_MED
+                    : MOTIF_FLAT_LOW;
+    }
+
     const vel = (0.30 + melodyStrength * 0.30).toFixed(3);
     const velMax = (0.40 + melodyStrength * 0.20).toFixed(3);
     const delayFb = (0.15 + volatility * 0.25).toFixed(2);
+
+    // Intensity embellishment: high intBand adds occasional octave reinforcement
+    const embellish = intBand >= 2
+      ? (momSign < 0
+          ? `.rarely(x => x.add(note(-7)))`
+          : `.rarely(x => x.add(note(7)))`)
+      : '';
+
     return `
-$: note(\`${melodyNotes}\`)
+$: note(\`${melodyPattern}\`).scale("${scale}")
   .s("piano")
   .clip(1)
-  .velocity(rand.range(${vel}, ${velMax}))
+  .velocity(rand.range(${vel}, ${velMax}))${embellish}
   .gain(${(energy * gainMul).toFixed(3)})
   .room(0.25)
   .roomsize(3)
@@ -677,11 +662,8 @@ $: s("<~ ~ ~ ~ ~ ~ ~ [~ ~ [sd ~] [~ ~ sd]]>").gain(${(0.22 * energy * gainMul).t
         : (momDir === 'up' ? GM_BASS_UP : momDir === 'down' ? GM_BASS_DOWN : GM_BASS_FLAT);
       const bassNotes = bassPatterns[melodicBand];
 
-      // Select melody pattern: same axes
-      const melodyPatterns = tone === 1
-        ? (momDir === 'up' ? BB_MELODY_UP : momDir === 'down' ? BB_MELODY_DOWN : BB_MELODY_FLAT)
-        : (momDir === 'up' ? GM_MELODY_UP : momDir === 'down' ? GM_MELODY_DOWN : GM_MELODY_FLAT);
-      const melodyNotes = melodyPatterns[melodicBand];
+      // Momentum direction for melody motif
+      const momSign = momMagQ < 0.1 ? 0 : (momQ > 0 ? 1 : -1);
 
       // ── Build code ──
       let code = "setcpm(30);\n";
@@ -709,7 +691,7 @@ $: s("<~ ~ ~ ~ ~ ~ ~ [~ ~ [sd ~] [~ ~ sd]]>").gain(${(0.22 * energy * gainMul).t
 
       // 6. Melody — during trends or active movement (heat > 0.20 AND melodyStrength > 0.05)
       code += (hQ > 0.20 && melodyStrength > 0.05)
-        ? melodyCode(melodyNotes, melodyStrength, energy, volQ, this.getGain('melody'))
+        ? melodyCode(tone, momSign, momMagQ, melodyStrength, energy, volQ, intBand, this.getGain('melody'))
         : '\n$: silence;\n';
 
       // 7. Ghost snare (intBand >= 1 AND heat > 0.40)
@@ -747,10 +729,10 @@ $: s("<~ ~ ~ ~ ~ ~ ~ [~ ~ [sd ~] [~ ~ sd]]>").gain(${(0.22 * energy * gainMul).t
         const mag = msg.magnitude || 0.5;
         const gain = (0.03 + mag * 0.04).toFixed(3);
         const tone = data.tone !== undefined ? data.tone : 1;
-        const run = tone === 1
-          ? (dir > 0 ? "[Bb4 C5 D5 F5]" : "[F5 D5 C5 Bb4]")
-          : (dir > 0 ? "[G4 Bb4 D5 F5]" : "[F5 D5 Bb4 G4]");
-        return `$: note("${run}").s("piano").clip(0.5).velocity(${(0.3 + mag * 0.3).toFixed(2)}).gain(${gain}).room(0.35).delay(0.15).delayfeedback(0.25).orbit(5);`;
+        const scale = tone === 1 ? "Bb4:major" : "G4:minor";
+        // Seed motif — same shape as continuous melody, reinforces identity
+        const run = dir > 0 ? "[0 1 2 4]" : "[4 2 1 0]";
+        return `$: note("${run}").scale("${scale}").s("piano").clip(0.5).velocity(${(0.3 + mag * 0.3).toFixed(2)}).gain(${gain}).room(0.35).delay(0.15).delayfeedback(0.25).orbit(5);`;
       }
       return null;
     },
