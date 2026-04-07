@@ -224,7 +224,9 @@ const jazzTrioTrack = (() => {
   // ════════════════════════════════════════════════════════════
   //
   // Same seed motif as Digging in the Markets: [0,1,2,4] = "do re mi sol"
-  // Applied via .scale() — Bb4:major (bullish) or G4:minor (bearish)
+  // Applied via .scale() — pentatonic for melody (always consonant over
+  // any chord in the progression). Comp/bass provide diatonic richness;
+  // melody stays in the pentatonic "safe zone" — standard jazz practice.
   //
   // Jazz phrasing: quarter-note feel with @weights for held notes.
   // 8-bar phrases via <> cycling. Bars 1 & 8 = core motif anchor.
@@ -435,8 +437,10 @@ $: note(\`${bassNotes}\`)
   }
 
   // Melody — motif-based piano melody via .scale()
+  // Pentatonic keeps melody consonant over all chord changes.
+  // The comp/bass provide diatonic harmonic richness underneath.
   function melodyCode(tone, momSign, momMagQ, melodyStrength, energy, volatility, intBand, gainMul) {
-    const scale = tone === 1 ? "Bb4:major" : "G4:minor";
+    const scale = tone === 1 ? "Bb4:pentatonic" : "G4:minor pentatonic";
 
     // Select phrase set: direction × magnitude
     let melodyPattern;
@@ -459,16 +463,16 @@ $: note(\`${bassNotes}\`)
     const delayFb = (0.15 + volatility * 0.25).toFixed(2);
 
     // Intensity embellishment: high intBand adds occasional octave reinforcement
+    // Pentatonic octave = 5 degrees
     const embellish = intBand >= 2
       ? (momSign < 0
-          ? `.rarely(x => x.add(note(-7)))`
-          : `.rarely(x => x.add(note(7)))`)
+          ? `.rarely(x => x.add(note(-5)))`
+          : `.rarely(x => x.add(note(5)))`)
       : '';
 
     return `
 $: note(\`${melodyPattern}\`).scale("${scale}")
   .s("piano")
-  .clip(1)
   .velocity(rand.range(${vel}, ${velMax}))${embellish}
   .gain(${(energy * gainMul).toFixed(3)})
   .room(0.25)
@@ -729,7 +733,7 @@ $: s("<~ ~ ~ ~ ~ ~ ~ [~ ~ [sd ~] [~ ~ sd]]>").gain(${(0.22 * energy * gainMul).t
         const mag = msg.magnitude || 0.5;
         const gain = (0.03 + mag * 0.04).toFixed(3);
         const tone = data.tone !== undefined ? data.tone : 1;
-        const scale = tone === 1 ? "Bb4:major" : "G4:minor";
+        const scale = tone === 1 ? "Bb4:pentatonic" : "G4:minor pentatonic";
         // Seed motif — same shape as continuous melody, reinforces identity
         const run = dir > 0 ? "[0 1 2 4]" : "[4 2 1 0]";
         return `$: note("${run}").scale("${scale}").s("piano").clip(0.5).velocity(${(0.3 + mag * 0.3).toFixed(2)}).gain(${gain}).room(0.35).delay(0.15).delayfeedback(0.25).orbit(5);`;
