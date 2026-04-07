@@ -175,72 +175,173 @@ const diggingInTheMarkets = (() => {
       + `.gain(${g}).orbit(3);\n`;
   }
 
-  // ── Melody: pentatonic runs with delay ──
-  // momAbs controls range (how far up/down the scale the melody travels)
-  // momSign controls direction, intBand controls density
+  // ════════════════════════════════════════════════════════════
+  // MELODY MOTIF SYSTEM
+  // ════════════════════════════════════════════════════════════
+  //
+  // Seed motif: [0,1,2,4] (pentatonic degrees) = "do re mi sol"
+  //   — 3 steps + 1 leap, asymmetric, clear direction
+  //   — Inversion for falling: [4,2,1,0]
+  //
+  // 8-bar phrases via <> cycling. Bars 1 & 8 = core motif anchor.
+  // Bars 2-7 = variations (neighbour, sequence, extension, truncation,
+  // enclosure, retrograde answer). "Depart and return."
+  //
+  // 3 magnitude levels × 3 directions = 9 phrase sets.
+  // Intensity (intBand) handled by degradeBy + embellishment, not
+  // separate patterns — keeps the motif identity consistent.
+
+  // ── Rising phrases (momentum > 0) ──
+  // Seed: [0,1,2,4] sequenced upward
+
+  // Low magnitude — sparse, tentative. Motif hinted, completes only at bar 8
+  const MOTIF_RISE_LOW = `<
+    [[0 1 2 ~] [~ ~ ~ ~] [2 1 ~ ~] [~ ~ ~ ~]]
+    [[~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[1 2 3 ~] [~ ~ ~ ~] [3 2 ~ ~] [~ ~ ~ ~]]
+    [[~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[0 1 2 ~] [~ ~ ~ ~] [1 2 ~ ~] [~ ~ ~ ~]]
+    [[~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[3 2 1 ~] [~ ~ ~ ~] [1 2 ~ ~] [~ ~ ~ ~]]
+    [[0 1 2 4] [~ ~ ~ ~] [4 2 ~ ~] [~ ~ ~ ~]]
+  >`;
+
+  // Medium magnitude — clear climb, variations, all bars present
+  const MOTIF_RISE_MED = `<
+    [[0 1 2 4] [4 2 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[0 1 3 2] [2 4 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[1 2 3 5] [5 3 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[2 3 4 3] [2 4 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[0 1 2 ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[1 2 4 2] [1 2 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[4 2 1 ~] [0 1 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[0 1 2 4] [4 2 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+  >`;
+
+  // High magnitude — sweeping sequence, relentless climb
+  const MOTIF_RISE_HIGH = `<
+    [[0 1 2 4] [4 2 1 2] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[1 2 3 5] [5 3 2 3] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[2 3 4 6] [6 4 3 4] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[3 4 5 4] [3 4 5 ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[3 4 5 7] [7 5 4 5] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[4 5 6 5] [4 5 6 ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[6 4 2 ~] [0 1 2 ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[0 1 2 4] [4 5 6 4] [~ ~ ~ ~] [~ ~ ~ ~]]
+  >`;
+
+  // ── Falling phrases (momentum < 0) ──
+  // Seed inverted: [4,2,1,0] sequenced downward
+
+  // Low magnitude — sparse, tentative descent
+  const MOTIF_FALL_LOW = `<
+    [[4 3 2 ~] [~ ~ ~ ~] [2 3 ~ ~] [~ ~ ~ ~]]
+    [[~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[3 2 1 ~] [~ ~ ~ ~] [1 2 ~ ~] [~ ~ ~ ~]]
+    [[~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[4 3 2 ~] [~ ~ ~ ~] [3 2 ~ ~] [~ ~ ~ ~]]
+    [[~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[1 2 3 ~] [~ ~ ~ ~] [2 1 ~ ~] [~ ~ ~ ~]]
+    [[4 2 1 0] [~ ~ ~ ~] [0 1 ~ ~] [~ ~ ~ ~]]
+  >`;
+
+  // Medium magnitude — clear descent with development
+  const MOTIF_FALL_MED = `<
+    [[4 2 1 0] [0 2 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[3 2 1 2] [1 0 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[3 1 0 ~] [0 1 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[2 1 0 1] [2 0 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[4 3 2 ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[3 2 0 2] [1 0 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[0 1 2 ~] [2 1 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[4 2 1 0] [0 2 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+  >`;
+
+  // High magnitude — sweeping descent
+  const MOTIF_FALL_HIGH = `<
+    [[7 5 4 2] [2 4 5 4] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[6 4 3 1] [1 3 4 3] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[5 3 2 0] [0 2 3 2] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[3 2 1 2] [3 1 0 ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[4 2 1 0] [0 1 2 1] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[2 1 0 1] [0 1 0 ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[0 2 3 ~] [3 2 1 ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[4 2 1 0] [0 1 0 ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+  >`;
+
+  // ── Flat phrases (momentum ≈ 0) ──
+  // Motif fragments that never complete — indecisive, oscillating
+  // Never leaps to degree 4: the listener waits for resolution that doesn't come
+
+  // Low magnitude — very sparse, gentle rocking
+  const MOTIF_FLAT_LOW = `<
+    [[0 1 2 ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[2 1 0 ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[1 2 1 ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[2 1 0 ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[0 1 2 ~] [~ ~ ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+  >`;
+
+  // Medium magnitude — more present but still oscillating
+  const MOTIF_FLAT_MED = `<
+    [[0 1 2 1] [2 1 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[2 3 2 1] [0 1 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[1 2 1 0] [1 2 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[2 1 2 3] [2 1 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[0 1 2 1] [0 1 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[3 2 1 2] [1 0 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[1 0 1 2] [1 0 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[2 1 0 ~] [0 1 ~ ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+  >`;
+
+  // High magnitude — busy but going nowhere
+  const MOTIF_FLAT_HIGH = `<
+    [[0 1 2 3] [2 1 0 1] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[2 1 0 1] [2 3 2 1] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[2 3 2 1] [0 1 2 3] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[3 2 1 0] [1 2 3 2] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[1 2 3 2] [1 0 1 2] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[3 2 1 0] [1 2 1 0] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[1 2 3 2] [3 2 1 0] [~ ~ ~ ~] [~ ~ ~ ~]]
+    [[2 1 0 ~] [1 2 1 ~] [~ ~ ~ ~] [~ ~ ~ ~]]
+  >`;
+
+  // ── Melody: motif-based phrases with delay ──
   function melodyCode(tone, momSign, momAbs, intBand, energy, volat, gainMul) {
     const g = (0.18 * energy * gainMul).toFixed(3);
     const scale = tone === 1 ? "Bb4:pentatonic" : "G4:minor pentatonic";
 
-    // Momentum magnitude → melodic range
-    //   small  (< 0.35): 3 degrees — gentle rocking
-    //   medium (< 0.65): 5 degrees — clear climb/descent
-    //   large  (≥ 0.65): 7+ degrees — full sweep
-    const busy = intBand >= 2;
+    // Select phrase set: direction × magnitude
     let melodyPattern;
-
     if (momSign > 0) {
-      // ── Ascending: bigger momentum = higher climb ──
-      if (momAbs >= 0.65) {
-        melodyPattern = busy
-          ? "[0 1 2 ~] [2 4 5 ~] [4 5 6 ~] [5 6 7 ~]"       // full ascent
-          : "[0 1 2 ~] [~ ~ ~ ~] [4 5 6 ~] [~ ~ ~ ~]";
-      } else if (momAbs >= 0.35) {
-        melodyPattern = busy
-          ? "[0 1 2 ~] [2 3 4 ~] [3 4 5 ~] [4 3 2 ~]"       // moderate climb, settles back
-          : "[0 1 2 ~] [~ ~ ~ ~] [3 4 5 ~] [~ ~ ~ ~]";
-      } else {
-        melodyPattern = busy
-          ? "[0 1 2 ~] [1 2 3 ~] [2 3 2 ~] [1 2 3 ~]"       // gentle upward rocking
-          : "[0 1 2 ~] [~ ~ ~ ~] [2 3 2 ~] [~ ~ ~ ~]";
-      }
+      melodyPattern = momAbs >= 0.65 ? MOTIF_RISE_HIGH
+                    : momAbs >= 0.35 ? MOTIF_RISE_MED
+                    : MOTIF_RISE_LOW;
     } else if (momSign < 0) {
-      // ── Descending: bigger momentum = deeper fall ──
-      if (momAbs >= 0.65) {
-        melodyPattern = busy
-          ? "[7 6 5 ~] [6 5 4 ~] [5 4 2 ~] [4 2 0 ~]"       // full descent
-          : "[7 6 5 ~] [~ ~ ~ ~] [4 2 1 ~] [~ ~ ~ ~]";
-      } else if (momAbs >= 0.35) {
-        melodyPattern = busy
-          ? "[5 4 3 ~] [4 3 2 ~] [3 2 1 ~] [2 1 0 ~]"       // moderate descent
-          : "[5 4 3 ~] [~ ~ ~ ~] [2 1 0 ~] [~ ~ ~ ~]";
-      } else {
-        melodyPattern = busy
-          ? "[3 2 1 ~] [2 1 0 ~] [1 2 1 ~] [2 1 0 ~]"       // gentle downward rocking
-          : "[3 2 1 ~] [~ ~ ~ ~] [1 2 1 ~] [~ ~ ~ ~]";
-      }
+      melodyPattern = momAbs >= 0.65 ? MOTIF_FALL_HIGH
+                    : momAbs >= 0.35 ? MOTIF_FALL_MED
+                    : MOTIF_FALL_LOW;
     } else {
-      // ── Neutral: no trend — wander around the middle ──
-      melodyPattern = busy
-        ? "[0|2] ~ [4|5] ~ [~|2] ~ [4|0] ~"
-        : "[0|2] ~ ~ ~ [~|4] ~ ~ ~";
+      melodyPattern = momAbs >= 0.65 ? MOTIF_FLAT_HIGH
+                    : momAbs >= 0.35 ? MOTIF_FLAT_MED
+                    : MOTIF_FLAT_LOW;
     }
 
-    const degradeAmt = (0.15 + volat * 0.3).toFixed(2);
+    // Volatility → note dropout (uncertain markets = fragmented phrasing)
+    const degradeAmt = (0.10 + volat * 0.25).toFixed(2);
     const delaytime = (60 / 80 / 2).toFixed(4);  // 8th note delay
 
-    // Flat patterns: iter + palindrome for wandering variety
-    // Directional patterns: no iter (rotation wraps low→high, breaking contour)
-    const transforms = momSign === 0
-      ? `.iter(4).palindrome()` : ``;
+    // Intensity embellishment: high intBand adds occasional octave reinforcement
+    const embellish = intBand >= 2
+      ? (momSign < 0
+          ? `.rarely(x => x.add(note(-5)))`
+          : `.rarely(x => x.add(note(5)))`)
+      : '';
 
-    // Occasional octave shift in the direction of travel (not against it)
-    const embellish = momSign < 0
-      ? `.rarely(x => x.add(note(-5)))`
-      : `.rarely(x => x.add(note(5)))`;
-
-    return `$: note("${melodyPattern}").scale("${scale}")`
-      + transforms
+    return `$: note(\`${melodyPattern}\`).scale("${scale}")`
       + `.degradeBy(${degradeAmt})`
       + embellish
       + `.s("piano").decay(0.35).sustain(0)`
@@ -401,7 +502,8 @@ const diggingInTheMarkets = (() => {
         const gain = (0.02 + mag * 0.03).toFixed(3);
         const tone = data.tone !== undefined ? data.tone : 1;
         const scale = tone === 1 ? "Bb4:pentatonic" : "G4:minor pentatonic";
-        const run = dir > 0 ? "[0 2 4 5]" : "[5 4 2 0]";
+        // Use the seed motif for events too — reinforces the melodic identity
+        const run = dir > 0 ? "[0 1 2 4]" : "[4 2 1 0]";
         return `$: note("${run}").scale("${scale}")`
           + `.s("piano").decay(0.3).sustain(0)`
           + `.gain(${gain}).lpf(2000)`
