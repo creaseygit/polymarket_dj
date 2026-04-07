@@ -146,6 +146,9 @@ input[type="range"]::-moz-range-thumb {
   .container { padding: 12px; }
   h1 { font-size: 20px; }
 
+  /* Nav: wrap links and allow scrolling gracefully */
+  .nav-links { flex-wrap: wrap; gap: 8px; }
+
   /* Audio grid: stack vertically */
   .audio-grid {
     grid-template-columns: 1fr !important;
@@ -177,8 +180,11 @@ input[type="range"]::-moz-range-thumb {
   .np-header { flex-direction: column; gap: 6px; }
   .np-link { align-self: flex-start; }
 
-  /* Browse cards: allow question text to wrap */
+  /* Browse cards: wrap to two rows — question on top, actions below */
+  .browse-card { flex-wrap: wrap; }
+  .browse-body { flex-basis: 100%; }
   .browse-question { white-space: normal; }
+  .browse-price { margin-left: auto; }
 
   /* Buttons: ensure touch-friendly sizing */
   button { min-height: 40px; }
